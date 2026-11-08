@@ -538,6 +538,13 @@ export function getPortfolioTemplatesCss() {
 .pf-t-rainbow .pf-reflection strong::before { content: "⭐ "; }
 .pf-t-rainbow .pf-file { background: #FFFFFF; }
 
+/* ---------- 2단 배치에서 마지막 카드가 혼자 남으면 가로 전체 사용 ---------- */
+.pf-t-pastel .pf-work:last-child:nth-child(odd),
+.pf-t-rainbow .pf-work:last-child:nth-child(odd),
+.pf-t-scrapbook .pf-work:last-child:nth-child(odd),
+.pf-t-mag-zine .pf-work:last-child:nth-child(odd),
+.pf-t-editorial .pf-work:last-child:nth-child(even) { grid-column: 1 / -1; }
+
 /* ---------- 휴대폰처럼 좁은 화면: 모두 한 줄로 ---------- */
 @container (max-width: 640px) {
   .pf .pf-works { grid-template-columns: minmax(0, 1fr) !important; }
