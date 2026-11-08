@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>학생 1년 교과·프로젝트 디지털 포트폴리오 메이커 (9종 디자인)</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    .scrapbook-bg {
+      background-color: #FFFDF7;
+      background-image: radial-gradient(#D7CCC8 1.25px, transparent 1.25px);
+      background-size: 20px 20px;
+    }
+    .washi-tape {
+      width: 92px;
+      height: 22px;
+      background: rgba(224, 109, 83, 0.28);
+      border-left: 2px dashed rgba(224, 109, 83, 0.5);
+      border-right: 2px dashed rgba(224, 109, 83, 0.5);
+      transform: rotate(-2deg);
+    }
+    /* Book Spread spine shadow for Template 9 */
+    .book-spine-spread {
+      background: linear-gradient(90deg, #F7F3E8 0%, #EFE9D8 48.5%, #D5C8B0 50%, #EFE9D8 51.5%, #F7F3E8 100%);
+    }
+    /* Brutalist Zine shadow for Template 8 */
+    .zine-card {
+      border: 2px solid #111111;
+      box-shadow: 4px 4px 0px #111111;
+    }
+    .mobile-shell {
+      max-width: 390px;
+      margin: 0 auto;
+      border: 10px solid #1E293B;
+      border-radius: 38px;
+      overflow: hidden;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.28);
+      background: #FFFFFF;
+    }
+    .mobile-notch {
+      width: 110px;
+      height: 18px;
+      background: #1E293B;
+      margin: 0 auto 6px;
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #FFFFFF !important; color: #000000 !important; }
+      #preview-stage { padding: 0 !important; max-width: 100% !important; }
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased min-h-screen flex flex-col">
+
+  <!-- Top App Bar -->
+  <header class="no-print sticky top-0 z-50 bg-[var(--card)] border-b border-[var(--border)] px-4 py-3 shadow-sm">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-extrabold text-base">P</div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-extrabold text-[var(--foreground)]">학생 1년 교과 & 프로젝트 포트폴리오 메이커</h1>
+            <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600">잡지책 3종 추가 · 총 9종 양식</span>
+          </div>
+          <p class="text-xs text-[var(--muted-foreground)]">교과별 결과물 · 프로젝트 단위 기록 · 학생 활동 사진을 올리면 9종 HTML(ZIP)과 PDF로 완성됩니다</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="loadSampleData()" class="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--content)] text-xs font-semibold">
+          ✨ 예시 데이터 채우기
+        </button>
+        <button onclick="resetBlankData()" class="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--content)] text-xs font-semibold">
+          📄 새로 만들기
+        </button>
+        <button onclick="downloadZipPackage()" class="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-sm">
+          📦 HTML + 관련 파일 압축(ZIP) 다운로드
+        </button>
+        <button onclick="exportPdfPrint()" class="px-3.5 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold shadow-sm hover:opacity-90">
+          🖨️ PDF 출력물 인쇄 / 저장
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Studio Split Layout -->
+  <div class="flex-1 max-w-7xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-0">
+    <!-- Left Editor Column -->
+    <aside class="no-print lg:col-span-5 border-b lg:border-b-0 lg:border-r border-[var(--border)] bg-[var(--card)] flex flex-col">
+      <!-- Editor Tabs -->
+      <div class="grid grid-cols-3 gap-1 p-2 bg-[var(--content)] border-b border-[var(--border)]">
+        <button onclick="setEditorTab('profile')" id="etab-profile" class="py-2 px-2 rounded-lg text-xs font-bold transition-all">
+          1. 기본정보·분류설정
+        </button>
+        <button onclick="setEditorTab('works')" id="etab-works" class="py-2 px-2 rounded-lg text-xs font-bold transition-all">
+          2. 교과·프로젝트·활동사진
+        </button>
+        <button onclick="setEditorTab('templates')" id="etab-templates" class="py-2 px-2 rounded-lg text-xs font-bold transition-all">
+          3. 9종 디자인 (잡지책+)
+        </button>
+      </div>
+
+      <!-- Editor Dynamic Panel -->
+      <div id="editor-panel" class="p-4 space-y-4 overflow-y-auto max-h-[82vh]"></div>
+    </aside>
+
+    <!-- Right Live Preview Column -->
+    <main class="lg:col-span-7 flex flex-col bg-[var(--background)]">
+      <!-- Preview Toolbar -->
+      <div class="no-print sticky top-[61px] z-40 bg-[var(--content)] border-b border-[var(--border)] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div class="text-xs">
+          <span class="font-bold text-[var(--foreground)]" id="preview-tpl-indicator"></span>
+          <span class="text-[var(--muted-foreground)] ml-1">— 우측에서 [프로젝트 단위 / 교과별 / 📸 활동사진첩] 필터를 눌러보세요</span>
+        </div>
+        <div class="flex items-center gap-1 bg-[var(--card)] p-1 rounded-lg border border-[var(--border)]">
+          <button onclick="setPreviewMode('desktop')" id="pm-desktop" class="px-2.5 py-1 rounded text-xs font-semibold">💻 PC 화면</button>
+          <button onclick="setPreviewMode('mobile')" id="pm-mobile" class="px-2.5 py-1 rounded text-xs font-semibold">📱 핸드폰 화면</button>
+          <button onclick="setPreviewMode('pdf')" id="pm-pdf" class="px-2.5 py-1 rounded text-xs font-semibold">📄 PDF 출력물</button>
+        </div>
+      </div>
+
+      <!-- Live Portfolio Canvas -->
+      <div class="p-4 md:p-6 flex-1 overflow-y-auto" id="preview-stage"></div>
+    </main>
+  </div>
+
+  <!-- Toast Banner -->
+  <div id="toast" class="no-print fixed bottom-5 right-5 z-50 hidden bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xl"></div>
+
+  <script>
+    // Pure-JS ZIP Generator
+    const CRC_TABLE = (() => {
+      const table = new Uint32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        table[i] = c >>> 0;
+      }
+      return table;
+    })();
+
+    function crc32(bytes) {
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ bytes[i]) & 0xFF];
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function createZipBlob(files) {
+      const encoder = new TextEncoder();
+      const localParts = [];
+      const centralParts = [];
+      let offset = 0;
+      for (const file of files) {
+        const nameBytes = encoder.encode(file.path);
+        const dataBytes = typeof file.content === 'string' ? encoder.encode(file.content) : file.content;
+        const crc = crc32(dataBytes);
+        const size = dataBytes.length;
+
+        const localHeader = new Uint8Array(30 + nameBytes.length);
+        const lv = new DataView(localHeader.buffer);
+        lv.setUint32(0, 0x04034b50, true);
+        lv.setUint16(4, 20, true);
+        lv.setUint16(6, 0x0800, true);
+        lv.setUint16(8, 0, true);
+        lv.setUint32(14, crc, true);
+        lv.setUint32(18, size, true);
+        lv.setUint32(22, size, true);
+        lv.setUint16(26, nameBytes.length, true);
+        localHeader.set(nameBytes, 30);
+        localParts.push(localHeader, dataBytes);
+
+        const centralHeader = new Uint8Array(46 + nameBytes.length);
+        const cv = new DataView(centralHeader.buffer);
+        cv.setUint32(0, 0x02014b50, true);
+        cv.setUint16(4, 20, true);
+        cv.setUint16(6, 20, true);
+        cv.setUint16(8, 0x0800, true);
+        cv.setUint32(16, crc, true);
+        cv.setUint32(20, size, true);
+        cv.setUint32(24, size, true);
+        cv.setUint16(28, nameBytes.length, true);
+        cv.setUint32(42, offset, true);
+        centralHeader.set(nameBytes, 46);
+        centralParts.push(centralHeader);
+        offset += localHeader.length + size;
+      }
+      const centralSize = centralParts.reduce((a, b) => a + b.length, 0);
+      const eocd = new Uint8Array(22);
+      const ev = new DataView(eocd.buffer);
+      ev.setUint32(0, 0x06054b50, true);
+      ev.setUint16(8, files.length, true);
+      ev.setUint16(10, files.length, true);
+      ev.setUint32(12, centralSize, true);
+      ev.setUint32(16, offset, true);
+      return new Blob([...localParts, ...centralParts, eocd], { type: 'application/zip' });
+    }
+
+    function dataUrlToUint8Array(dataUrl) {
+      const comma = dataUrl.indexOf(',');
+      const header = dataUrl.slice(0, comma);
+      const body = dataUrl.slice(comma + 1);
+      if (header.includes(';base64')) {
+        const binary = atob(body);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+      }
+      return new TextEncoder().encode(decodeURIComponent(body));
+    }
+
+    function makeSvgUri(svg) {
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg.trim());
+    }
+
+    // Crisp Sample SVGs for both Activity Photos (학생 활동 스냅 사진) and Result Artworks (완성 작품)
+    const SAMPLE_SVGS = {
+      actRoofTeam: makeSvgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300"><rect width="500" height="300" fill="#DCECE5"/><rect x="30" y="190" width="440" height="80" rx="8" fill="#52796F"/><circle cx="155" cy="125" r="32" fill="#F4A261"/><path d="M115 195 Q155 150 195 195 Z" fill="#2A9D8F"/><circle cx="265" cy="120" r="32" fill="#E76F51"/><path d="M225 195 Q265 145 305 195 Z" fill="#264653"/><rect x="330" y="110" width="95" height="80" rx="8" fill="#84A98C" stroke="#2F3E46" stroke-width="3"/><text x="250" y="240" text-anchor="middle" fill="#FFF" font-size="16" font-weight="700">📸 [활동 사진] 학교 옥상 식물 상자 설치 및 모둠 온도 측정 현장</text></svg>`),
+      actFieldTrip: makeSvgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300"><rect width="500" height="300" fill="#FDEECC"/><path d="M70 195 L165 105 L260 195 Z" fill="#BC6C25"/><rect x="95" y="195" width="140" height="65" fill="#DDA15E"/><circle cx="330" cy="145" r="28" fill="#283618"/><circle cx="395" cy="150" r="26" fill="#606C38"/><rect x="20" y="235" width="460" height="45" rx="6" fill="#606C38"/><text x="250" y="263" text-anchor="middle" fill="#FFF" font-size="15" font-weight="700">📸 [활동 사진] 우리 동네 근대 건축물 답사 및 어르신 인터뷰 촬영</text></svg>`),
+      actDebate: makeSvgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300"><rect width="500" height="300" fill="#F5E6D8"/><rect x="70" y="45" width="360" height="135" rx="12" fill="#FFF" stroke="#C85A32" stroke-width="3"/><text x="250" y="105" text-anchor="middle" fill="#C85A32" font-size="18" font-weight="800">"공감은 타고나는가, 길러지는가?"</text><text x="250" y="138" text-anchor="middle" fill="#57534E" font-size="14">국어 모둠 독서 원탁 토론 발표 현장</text><circle cx="140" cy="215" r="24" fill="#C85A32"/><circle cx="250" cy="215" r="24" fill="#3D6B58"/><circle cx="360" cy="215" r="24" fill="#1E3A5F"/><text x="250" y="272" text-anchor="middle" fill="#432818" font-size="15" font-weight="700">📸 [활동 사진] 국어 시간 『아몬드』 독서 디베이트 발표 모습</text></svg>`),
+      actCoding: makeSvgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300"><rect width="500" height="300" fill="#E0F2FE"/><rect x="85" y="45" width="330" height="165" rx="12" fill="#0F172A"/><text x="250" y="115" text-anchor="middle" fill="#38BDF8" font-family="monospace" font-size="16" font-weight="700">python analyze_foodwaste.py</text><text x="250" y="150" text-anchor="middle" fill="#A7F3D0" font-size="14">학생회 급식 잔반 줄이기 캠페인 부스 운영</text><text x="250" y="255" text-anchor="middle" fill="#0369A1" font-size="15" font-weight="700">📸 [활동 사진] 점심시간 급식실 잔반량 측정 및 캠페인 피켓 홍보</text></svg>`),
+      korean: makeSvgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 280"><rect width="500" height="280" fill="#F5EBE1"/><circle cx="390" cy="70" r="50" fill="#E8D3BF"/><path d="M110 210 Q180 190 250 210 L250 85 Q180 65 110 85 Z" fill="#FFFDF9" stroke="#8C583A" stroke-width="3"/><path d="M390 210 Q320 190 250 210 L250 85 Q320 65 390 85 Z" fill="#FAF3EB" stroke="#8C583A" stroke-width="3"/><line x1="135" y1="115" x2="225" y2="112" stroke="#C85A32" stroke-width="4"/><circle cx="320" cy="155" r="18" fill="#C85A32"/><text x="250" y="252" text-anchor="middle" fill="#5C3D28" font-size="15" font-weight="700">🎨 [완성 작품] 『아몬드』 인물 공감 구조도 및 비평문</text></svg>`),
+      science: makeSvgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 280"><rect width="500" height="280" fill="#E6F2EE"/><rect x="60" y="36" width="380" height="180" rx="12" fill="#FFF" stroke="#B7D7CD" stroke-width="2"/><polyline points="100,170 175,120 250,85 325,98 400,135" fill="none" stroke="#E06D53" stroke-width="4"/><polyline points="100,185 175,155 250,135 325,140 400,168" fill="none" stroke="#2E6F5E" stroke-width="4"/><text x="250" y="252" text-anchor="middle" fill="#1E4E40" font-size="15" font-weight="700">🎨 [완성 결과물] 옥상 녹화 증산 작용 온도 비교 차트 (-3.8°C)</text></svg>`),
+      art: makeSvgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 280"><rect width="500" height="280" fill="#FDE68A"/><path d="M95 215 A155 140 0 0 1 405 215 Z" fill="#FFF" stroke="#475569" stroke-width="2.5"/><circle cx="90" cy="190" r="35" fill="#3D6B58"/><circle cx="415" cy="185" r="40" fill="#2E5A48"/><rect y="215" width="500" height="65" fill="#334E43"/><text x="250" y="252" text-anchor="middle" fill="#FFFBEB" font-size="15" font-weight="700">🎨 [완성 작품] 내가 꿈꾸는 숲속 미래 도서관 일러스트</text></svg>`)
+    };
+
+    // 9 Templates (Original 6 + 3 New Magazine Book Templates!)
+    const TEMPLATES = [
+      { id: 'mag-life', num: '시안 7 ★잡지책 1', name: '포토 에세이 라이프 매거진', badge: '화보 잡지책', desc: '킨포크·라이프 매거진처럼 학생의 [활동 사진]과 [완성 작품]이 큼직한 화보 스프레드로 펼쳐지는 감성 잡지책', bg: '#F6F5F0', text: '#262A24', accent: '#4A5D4E' },
+      { id: 'mag-zine', num: '시안 8 ★잡지책 2', name: '팝 컬처 & 아트진 매거진', badge: '프로젝트 특집 잡지책', desc: '독립 아트진(Zine) 스타일의 대담한 프레임과 [프로젝트 특집호 박스], [활동 사진 필름 스트립]이 돋보이는 잡지책', bg: '#FCFBF7', text: '#111111', accent: '#EA580C' },
+      { id: 'mag-book', num: '시안 9 ★잡지책 3', name: '클래식 북저널 & 무크지', badge: '양면 펼침 책자형', desc: '실제 단행본 잡지책을 양쪽으로 펼친 듯한 2면 북 스프레드(Book-Spread)와 장식문자(Drop-cap)가 우아한 문집', bg: '#F7F3E8', text: '#231F20', accent: '#6B1D2F' },
+      { id: 'editorial', num: '시안 1', name: '모던 에디토리얼 매거진', badge: '문집·칼럼형', desc: '교내 문집이나 매거진처럼 명조 타이포그래피와 Cover Story + 2단 칼럼 레이아웃', bg: '#FAF7F2', text: '#1C1917', accent: '#C85A32' },
+      { id: 'gallery', num: '시안 2', name: '노르딕 미니멀 갤러리', badge: '미술관·전시형', desc: '여백의 미를 살려 그림·사진 작품과 캡션에 시선이 집중되는 미술관 도록 스타일', bg: '#F8FAFC', text: '#0F172A', accent: '#3D6B58' },
+      { id: 'timeline', num: '시안 3', name: '크로니클 성장 타임라인', badge: '연대기·성장형', desc: '1학기(3월)~2학기(2월) 시간의 흐름을 따라 배움과 성찰을 연결하는 타임라인', bg: '#F4F1EA', text: '#1B2A4A', accent: '#D97706' },
+      { id: 'academic', num: '시안 4', name: '아카데믹 리서치 저널', badge: '탐구보고서형', desc: '자동 목차(TOC)와 [탐구내용 → 결론 및 성찰] 구조로 정돈된 학술 리포트 양식', bg: '#FFFFFF', text: '#0F172A', accent: '#1E3A5F' },
+      { id: 'scrapbook', num: '시안 5', name: '아틀리에 스크랩북', badge: '다이어리·감성형', desc: '도트 노트 배경, 마스킹 테이프, 폴라로이드 사진과 포스트잇 성찰 메모', bg: '#FFFDF7', text: '#3E2723', accent: '#E06D53' },
+      { id: 'showcase', num: '시안 6', name: '인터랙티브 쇼케이스 데크', badge: '웹북·발표형', desc: '스마트폰·태블릿·PC에서 카드뉴스처럼 챕터를 넘겨보는 모던 쇼케이스', bg: '#18181B', text: '#F4F4F5', accent: '#14B8A6' }
+    ];
+
+    function getInitialSampleState() {
+      return {
+        selectedTemplate: 'mag-life', // Default to NEW Magazine Book 1 so user sees it right away
+        subjects: ['국어', '수학', '사회', '과학', '영어', '미술', '음악', '체육', '정보', '창의적 체험활동'],
+        projects: ['생태 도시 열섬 해결 프로젝트', '우리 마을 역사 다큐 프로젝트', 'AI 급식 잔반 제로 프로젝트'],
+        profile: {
+          portfolioTitle: '2026 나의 배움과 성장 매거진',
+          subtitle: '교과 수업과 융합 프로젝트, 그리고 생생한 활동 사진으로 기록한 열두 달',
+          studentName: '김하늘',
+          schoolInfo: '한빛중학교 2학년 3반',
+          academicYear: '2026학년도',
+          introText: '안녕하세요! 저는 친구들과 함께 부딪히며 탐구하는 프로젝트 활동과 글쓰기, 그림 그리기를 좋아하는 김하늘입니다. 1년 동안 교실과 현장에서 땀 흘린 활동 사진들과 교과별·프로젝트별 결과물을 한 권의 잡지책처럼 엮었습니다.'
+        },
+        works: [
+          {
+            id: 'w1',
+            entryType: 'project', // 'project' | 'subject'
+            projectName: '생태 도시 열섬 해결 프로젝트',
+            linkedSubjects: '과학 × 사회 × 기술·가정 융합',
+            projectRole: '실험 설계 및 온도 데이터 시각화 담당',
+            subject: '과학',
+            semester: '1학기 · 5월~7월',
+            activityType: '융합 탐구 프로젝트',
+            title: '초록 지붕 프로젝트: 학교 옥상 녹화 식물의 열섬 완화 실험',
+            content: '기후 위기 대응 프로젝트의 일환으로 4명의 모둠원과 함께 학교 옥상에 다육식물·잔디 모형 상자를 설치하고, 2주 동안 점심시간마다 적외선 온도계로 표면 온도를 비교 측정했습니다. 식물 상자 내부 온도가 일반 아스팔트 대비 평균 3.8°C 낮게 유지됨을 입증했습니다.',
+            reflection: '장마철 비바람에 실험 상자가 흔들려 재설치하는 우여곡절이 있었지만, 친구들과 함께 옥상을 오르내리며 찍은 활동 사진과 데이터 그래프를 보니 진짜 연구자가 된 기분이 들었습니다.',
+            activityPhotos: [
+              { id: 'ap1', name: 'rooftop_team_activity.svg', caption: '모둠원들과 학교 옥상에 식물 실험 상자를 설치하고 온도를 재는 모습', dataUrl: SAMPLE_SVGS.actRoofTeam }
+            ],
+            images: [
+              { id: 'img1', name: 'science_graph.svg', caption: '시간대별 옥상 표면 온도 저감 효과 비교 그래프 (-3.8°C)', dataUrl: SAMPLE_SVGS.science }
+            ],
+            attachments: [
+              { id: 'att1', name: '옥상녹화_실험데이터.csv', size: '1.8 KB', dataUrl: 'data:text/csv;charset=utf-8,' + encodeURIComponent('시간,일반상자,녹화상자\n12:00,31.2,28.1\n14:00,34.5,30.7') }
+            ]
+          },
+          {
+            id: 'w2',
+            entryType: 'project',
+            projectName: '우리 마을 역사 다큐 프로젝트',
+            linkedSubjects: '사회 × 미술 × 국어 융합',
+            projectRole: '현장 사진 촬영 및 일러스트 지도 제작',
+            subject: '사회',
+            semester: '2학기 · 9월~10월',
+            activityType: '지역사회 답사 프로젝트',
+            title: '골목길 시간 여행: 우리 동네 근대 문화유산 답사 & 스토리 맵',
+            content: '지역 내 보존 가치가 있는 오래된 간이역과 근대 건축물 4곳을 주말마다 직접 걸으며 촬영하고, 동네 토박이 어르신 인터뷰를 더해 스토리텔링 일러스트 지도로 완성했습니다.',
+            reflection: '교과서로만 보던 근현대사가 우리 동네 골목길에 살아 숨 쉬고 있다는 사실이 놀라웠고, 어르신들의 생생한 증언을 기록으로 남길 수 있어 뜻깊었습니다.',
+            activityPhotos: [
+              { id: 'ap2', name: 'fieldtrip_interview.svg', caption: '1954년 건립된 구 양조장 앞에서 동네 어르신께 역사를 듣는 인터뷰 현장', dataUrl: SAMPLE_SVGS.actFieldTrip }
+            ],
+            images: [],
+            attachments: []
+          },
+          {
+            id: 'w3',
+            entryType: 'subject',
+            projectName: '',
+            linkedSubjects: '',
+            projectRole: '',
+            subject: '국어',
+            semester: '1학기 · 4월',
+            activityType: '문학 비평 · 독서 토론',
+            title: '문학 비평 에세이: 『아몬드』를 읽고 바라본 공감의 의미',
+            content: '타인의 감정을 느끼지 못하는 주인공 윤재가 친구 곤이를 만나 변화하는 과정을 분석하고, 학급 원탁 토론에서 나온 다양한 의견을 종합해 2,400자 비평문으로 작성했습니다.',
+            reflection: '원탁 토론에서 나와 다른 생각을 가진 친구들의 근거를 경청하며 "공감은 타고나는 재능이 아니라 이해하려는 의지"라는 주장을 더욱 단단히 다질 수 있었습니다.',
+            activityPhotos: [
+              { id: 'ap3', name: 'korean_debate_photo.svg', caption: '국어 시간 모둠 원탁 독서 토론에서 핵심 질문을 발표하는 모습', dataUrl: SAMPLE_SVGS.actDebate }
+            ],
+            images: [
+              { id: 'img3', name: 'korean_essay.svg', caption: '『아몬드』 인물 관계도 및 공감 비평 에세이 노트', dataUrl: SAMPLE_SVGS.korean }
+            ],
+            attachments: [
+              { id: 'att3', name: '아몬드_문학비평문_김하늘.txt', size: '4.2 KB', dataUrl: 'data:text/plain;charset=utf-8,' + encodeURIComponent('『아몬드』 문학 비평문 전문입니다.') }
+            ]
+          },
+          {
+            id: 'w4',
+            entryType: 'project',
+            projectName: 'AI 급식 잔반 제로 프로젝트',
+            linkedSubjects: '정보 × 환경동아리',
+            projectRole: '파이썬 데이터 분석 및 캠페인 부스 운영',
+            subject: '정보',
+            semester: '2학기 · 11월~12월',
+            activityType: 'SW 데이터 캠페인 프로젝트',
+            title: '데이터로 바꾸는 급식실: 잔반량 분석 및 전교생 잔반 제로 캠페인',
+            content: '3개월간의 학교 급식 메뉴별 잔반량 데이터를 파이썬으로 분류·시각화하고, 점심시간 급식실 앞에서 전교생 대상 캠페인 부스를 운영했습니다.',
+            reflection: '내가 짠 코드 한 줄이 친구들의 식습관을 바꾸고 실제 학교 잔반량을 15% 줄이는 변화를 만들어내어 가장 보람찼습니다.',
+            activityPhotos: [
+              { id: 'ap4', name: 'coding_campaign_booth.svg', caption: '점심시간 급식실 앞 잔반 줄이기 캠페인 부스 운영 및 설문 현장', dataUrl: SAMPLE_SVGS.actCoding }
+            ],
+            images: [],
+            attachments: []
+          },
+          {
+            id: 'w5',
+            entryType: 'subject',
+            projectName: '',
+            linkedSubjects: '',
+            projectRole: '',
+            subject: '미술',
+            semester: '1학기 · 7월',
+            activityType: '그림 · 시각 예술',
+            title: '디지털 일러스트 & 수채화: 내가 꿈꾸는 숲속 미래 도서관',
+            content: '종이책의 따뜻한 질감과 홀로그램 아카이브가 공존하는 숲속 유리 돔 도서관을 2점 투시도법으로 스케치하고 수채 물감과 디지털 드로잉으로 완성한 작품입니다.',
+            reflection: '빛이 유리 천장을 통과해 퍼지는 색감을 표현하기 위해 세 번의 레이어 채색을 시도했습니다.',
+            activityPhotos: [],
+            images: [
+              { id: 'img5', name: 'art_library.svg', caption: '내가 꿈꾸는 숲속 미래 도서관 완성 일러스트', dataUrl: SAMPLE_SVGS.art }
+            ],
+            attachments: []
+          }
+        ]
+      };
+    }
+
+    let state = getInitialSampleState();
+    let editorTab = 'templates'; // Start on templates tab so user sees the 9 templates & 3 new magazine styles immediately
+    let activeWorkId = state.works[0].id;
+    let previewMode = 'desktop';
+    let filterMode = '전체'; // '전체' | '🚀 프로젝트 모음' | '📚 교과별 모음' | '📸 활동사진첩' | specific subject/project
+    let slideIndex = 0;
+
+    function esc(str = '') {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => el.classList.add('hidden'), 2800);
+    }
+
+    function setEditorTab(tab) {
+      editorTab = tab;
+      renderEditor();
+    }
+
+    function setPreviewMode(mode) {
+      previewMode = mode;
+      renderPreview();
+    }
+
+    function selectTemplate(tplId) {
+      state.selectedTemplate = tplId;
+      renderEditor();
+      renderPreview();
+      const found = TEMPLATES.find(t => t.id === tplId);
+      if (found) showToast(`🎨 '${found.name}' 디자인 양식이 적용되었습니다.`);
+    }
+
+    function loadSampleData() {
+      state = getInitialSampleState();
+      activeWorkId = state.works[0].id;
+      filterMode = '전체';
+      renderEditor();
+      renderPreview();
+      showToast('✨ 프로젝트·교과·활동사진 예시 데이터를 불러왔습니다.');
+    }
+
+    function resetBlankData() {
+      state = {
+        selectedTemplate: 'mag-life',
+        subjects: ['국어', '수학', '사회', '과학', '영어', '미술', '음악', '체육', '정보'],
+        projects: ['나의 첫 탐구 프로젝트', '우리 모둠 융합 프로젝트'],
+        profile: {
+          portfolioTitle: '2026 나의 배움과 성장 매거진',
+          subtitle: '1년 동안의 교과·프로젝트 활동과 나의 생각을 담은 기록장',
+          studentName: '',
+          schoolInfo: '',
+          academicYear: '2026학년도',
+          introText: ''
+        },
+        works: []
+      };
+      activeWorkId = null;
+      editorTab = 'profile';
+      renderEditor();
+      renderPreview();
+      showToast('📄 새 빈 포트폴리오가 준비되었습니다.');
+    }
+
+    function addNewWork(defaultType = 'project') {
+      const newWork = {
+        id: 'w_' + Date.now(),
+        entryType: defaultType,
+        projectName: defaultType === 'project' ? (state.projects[0] || '신규 융합 프로젝트') : '',
+        linkedSubjects: defaultType === 'project' ? '융합 탐구' : '',
+        projectRole: defaultType === 'project' ? '기획 및 제작' : '',
+        subject: state.subjects[0] || '국어',
+        semester: '1학기 · 5월',
+        activityType: defaultType === 'project' ? '프로젝트 활동' : '교과 탐구',
+        title: defaultType === 'project' ? '새로운 프로젝트 결과물 제목' : '새로운 교과 결과물 제목',
+        content: '이곳에 프로젝트/교과 활동 내용이나 자신의 글을 입력하세요.',
+        reflection: '활동을 통해 배우고 성장한 점을 적어보세요.',
+        activityPhotos: [],
+        images: [],
+        attachments: []
+      };
+      state.works.unshift(newWork);
+      activeWorkId = newWork.id;
+      filterMode = '전체';
+      renderEditor();
+      renderPreview();
+      showToast(defaultType === 'project' ? '🚀 새 프로젝트 단위 기록이 추가되었습니다.' : '📚 새 교과 결과물이 추가되었습니다.');
+    }
+
+    function deleteWork(id) {
+      state.works = state.works.filter(w => w.id !== id);
+      if (activeWorkId === id) activeWorkId = state.works[0]?.id || null;
+      renderEditor();
+      renderPreview();
+      showToast('기록이 삭제되었습니다.');
+    }
+
+    function handleActivityPhotoUpload(inputEl) {
+      const files = Array.from(inputEl.files || []);
+      const cur = state.works.find(w => w.id === activeWorkId);
+      if (!cur || !files.length) return;
+      if (!cur.activityPhotos) cur.activityPhotos = [];
+      let loaded = 0;
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          cur.activityPhotos.push({
+            id: 'ap_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+            name: file.name,
+            caption: file.name.replace(/\.[^.]+$/, '') + ' 활동 모습',
+            dataUrl: reader.result
+          });
+          loaded++;
+          if (loaded === files.length) {
+            renderEditor();
+            renderPreview();
+            showToast(`📸 학생 활동 사진 ${files.length}장이 추가되었습니다.`);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function handleImageUpload(inputEl) {
+      const files = Array.from(inputEl.files || []);
+      const cur = state.works.find(w => w.id === activeWorkId);
+      if (!cur || !files.length) return;
+      let loaded = 0;
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          cur.images.push({
+            id: 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+            name: file.name,
+            caption: file.name.replace(/\.[^.]+$/, ''),
+            dataUrl: reader.result
+          });
+          loaded++;
+          if (loaded === files.length) {
+            renderEditor();
+            renderPreview();
+            showToast(`🎨 완성 작품·결과물 이미지 ${files.length}장이 추가되었습니다.`);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function handleFileUpload(inputEl) {
+      const files = Array.from(inputEl.files || []);
+      const cur = state.works.find(w => w.id === activeWorkId);
+      if (!cur || !files.length) return;
+      let loaded = 0;
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          cur.attachments.push({
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+            name: file.name,
+            size: Math.max(1, Math.round(file.size / 1024)) + ' KB',
+            dataUrl: reader.result
+          });
+          loaded++;
+          if (loaded === files.length) {
+            renderEditor();
+            renderPreview();
+            showToast(`📎 첨부파일 ${files.length}개가 추가되었습니다.`);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function removeActivityPhoto(id) {
+      const cur = state.works.find(w => w.id === activeWorkId);
+      if (!cur) return;
+      cur.activityPhotos = (cur.activityPhotos || []).filter(p => p.id !== id);
+      renderEditor();
+      renderPreview();
+    }
+
+    function removeImage(id) {
+      const cur = state.works.find(w => w.id === activeWorkId);
+      if (!cur) return;
+      cur.images = (cur.images || []).filter(i => i.id !== id);
+      renderEditor();
+      renderPreview();
+    }
+
+    function removeAttachment(id) {
+      const cur = state.works.find(w => w.id === activeWorkId);
+      if (!cur) return;
+      cur.attachments = (cur.attachments || []).filter(a => a.id !== id);
+      renderEditor();
+      renderPreview();
+    }
+
+    function addCustomSubject() {
+      const inp = document.getElementById('new-subj-input');
+      if (!inp || !inp.value.trim()) return;
+      const val = inp.value.trim();
+      if (!state.subjects.includes(val)) state.subjects.push(val);
+      inp.value = '';
+      renderEditor();
+      showToast(`📚 '${val}' 과목이 추가되었습니다.`);
+    }
+
+    function addCustomProject() {
+      const inp = document.getElementById('new-proj-input');
+      if (!inp || !inp.value.trim()) return;
+      const val = inp.value.trim();
+      if (!state.projects.includes(val)) state.projects.push(val);
+      inp.value = '';
+      renderEditor();
+      showToast(`🚀 '${val}' 프로젝트명이 추가되었습니다.`);
+    }
+
+    // Render Left Editor
+    function renderEditor() {
+      ['profile', 'works', 'templates'].forEach(t => {
+        const btn = document.getElementById('etab-' + t);
+        btn.className = t === editorTab
+          ? 'py-2 px-2 rounded-lg text-xs font-bold transition-all bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm'
+          : 'py-2 px-2 rounded-lg text-xs font-bold transition-all text-[var(--muted-foreground)] hover:text-[var(--foreground)]';
+      });
+
+      const panel = document.getElementById('editor-panel');
+
+      if (editorTab === 'profile') {
+        const p = state.profile;
+        panel.innerHTML = `
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+            <h2 class="text-sm font-bold">포트폴리오 표지 및 학생 기본 정보</h2>
+            <div>
+              <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">포트폴리오 제목</label>
+              <input type="text" value="${esc(p.portfolioTitle)}" oninput="state.profile.portfolioTitle=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs font-semibold" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">부제목 / 한 줄 소개</label>
+              <input type="text" value="${esc(p.subtitle)}" oninput="state.profile.subtitle=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs" />
+            </div>
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">학생 이름</label>
+                <input type="text" value="${esc(p.studentName)}" oninput="state.profile.studentName=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">학교 · 학년 · 반</label>
+                <input type="text" value="${esc(p.schoolInfo)}" oninput="state.profile.schoolInfo=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">나의 소개글 (머리말)</label>
+              <textarea rows="3" oninput="state.profile.introText=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs leading-relaxed">${esc(p.introText)}</textarea>
+            </div>
+          </div>
+
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4 space-y-2.5">
+            <h2 class="text-sm font-bold">🚀 프로젝트 단위 목록 관리</h2>
+            <p class="text-xs text-[var(--muted-foreground)]">과목뿐 아니라 동아리·주제탐구·융합 프로젝트 단위로 묶어서 기록할 수 있습니다.</p>
+            <div class="flex gap-1.5">
+              <input id="new-proj-input" type="text" placeholder="새 프로젝트명 (예: 생태환경 탐구 프로젝트)" class="flex-1 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs" />
+              <button onclick="addCustomProject()" class="px-3 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-bold">+ 프로젝트 추가</button>
+            </div>
+            <div class="flex flex-wrap gap-1.5 pt-1">
+              ${(state.projects || []).map(pr => `<span class="px-2.5 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-700 text-xs font-bold">🚀 ${esc(pr)}</span>`).join('')}
+            </div>
+          </div>
+
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4 space-y-2.5">
+            <h2 class="text-sm font-bold">📚 교과목 목록 관리</h2>
+            <div class="flex gap-1.5">
+              <input id="new-subj-input" type="text" placeholder="새 과목명 입력 (예: 인공지능, 연극)" class="flex-1 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs" />
+              <button onclick="addCustomSubject()" class="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold">+ 과목 추가</button>
+            </div>
+            <div class="flex flex-wrap gap-1.5 pt-1">
+              ${state.subjects.map(s => `<span class="px-2.5 py-1 rounded-full bg-[var(--card)] border border-[var(--border)] text-xs font-semibold">📚 ${esc(s)}</span>`).join('')}
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (editorTab === 'works') {
+        if (!activeWorkId && state.works.length) activeWorkId = state.works[0].id;
+        const cur = state.works.find(w => w.id === activeWorkId);
+        const isProj = cur && cur.entryType === 'project';
+
+        panel.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-bold text-[var(--muted-foreground)]">등록된 기록 (${state.works.length}건)</span>
+            <div class="flex gap-1.5">
+              <button onclick="addNewWork('project')" class="px-2.5 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-bold shadow-sm">+ 🚀 프로젝트 단위 추가</button>
+              <button onclick="addNewWork('subject')" class="px-2.5 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold shadow-sm">+ 📚 교과 결과물 추가</button>
+            </div>
+          </div>
+
+          <!-- Work Selector Pills -->
+          <div class="flex gap-1.5 overflow-x-auto pb-1">
+            ${state.works.map(w => `
+              <button onclick="activeWorkId='${w.id}';renderEditor()" class="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border ${
+                w.id === activeWorkId
+                  ? 'bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]'
+                  : 'bg-[var(--background)] text-[var(--foreground)] border-[var(--border)]'
+              }">
+                ${w.entryType === 'project' ? '🚀 ' + esc(w.projectName || '프로젝트') : '📚 ' + esc(w.subject)} · ${esc(w.title.slice(0, 10))}..
+              </button>
+            `).join('')}
+          </div>
+
+          ${cur ? `
+            <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+              <!-- Entry Track Switcher (Subject vs Project) -->
+              <div class="flex items-center justify-between pb-2 border-b border-[var(--border)]">
+                <div class="flex gap-1.5">
+                  <button onclick="state.works.find(w=>w.id==='${cur.id}').entryType='project';renderEditor();renderPreview()" class="px-3 py-1 rounded-lg text-xs font-bold ${
+                    isProj ? 'bg-orange-600 text-white' : 'bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]'
+                  }">🚀 프로젝트 단위로 기록</button>
+                  <button onclick="state.works.find(w=>w.id==='${cur.id}').entryType='subject';renderEditor();renderPreview()" class="px-3 py-1 rounded-lg text-xs font-bold ${
+                    !isProj ? 'bg-[var(--primary)] text-[var(--primary-foreground)]' : 'bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]'
+                  }">📚 교과목 단위로 기록</button>
+                </div>
+                <button onclick="deleteWork('${cur.id}')" class="text-xs text-red-600 font-bold hover:underline">삭제</button>
+              </div>
+
+              ${isProj ? `
+                <!-- Project Unit Fields -->
+                <div class="p-3 rounded-xl bg-orange-500/10 border border-orange-500/30 space-y-2.5">
+                  <div>
+                    <label class="block text-xs font-extrabold text-orange-700 mb-1">🚀 프로젝트명 선택 또는 직접 입력</label>
+                    <input type="text" list="proj-list" value="${esc(cur.projectName)}" oninput="state.works.find(w=>w.id==='${cur.id}').projectName=this.value;renderPreview()" class="w-full px-2.5 py-1.5 rounded-lg border border-orange-300 bg-white text-slate-900 text-xs font-bold" placeholder="예: 생태 도시 열섬 해결 프로젝트" />
+                    <datalist id="proj-list">
+                      ${(state.projects || []).map(pr => `<option value="${esc(pr)}"></option>`).join('')}
+                    </datalist>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-xs font-bold text-orange-800 mb-1">연계 과목 / 분야</label>
+                      <input type="text" value="${esc(cur.linkedSubjects)}" oninput="state.works.find(w=>w.id==='${cur.id}').linkedSubjects=this.value;renderPreview()" class="w-full px-2.5 py-1.5 rounded-lg border border-orange-300 bg-white text-slate-900 text-xs" placeholder="예: 과학 × 사회 × 미술" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-bold text-orange-800 mb-1">프로젝트 내 나의 역할</label>
+                      <input type="text" value="${esc(cur.projectRole)}" oninput="state.works.find(w=>w.id==='${cur.id}').projectRole=this.value;renderPreview()" class="w-full px-2.5 py-1.5 rounded-lg border border-orange-300 bg-white text-slate-900 text-xs" placeholder="예: 실험 설계 및 데이터 분석" />
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">${isProj ? '대표 교과 태그' : '교과목 선택'}</label>
+                  <select onchange="state.works.find(w=>w.id==='${cur.id}').subject=this.value;renderEditor();renderPreview()" class="w-full px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs font-semibold">
+                    ${state.subjects.map(s => `<option value="${esc(s)}" ${cur.subject === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">학기 · 기간</label>
+                  <input type="text" value="${esc(cur.semester)}" oninput="state.works.find(w=>w.id==='${cur.id}').semester=this.value;renderPreview()" class="w-full px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs" placeholder="예: 1학기 · 5~7월" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">활동 유형</label>
+                  <input type="text" value="${esc(cur.activityType)}" oninput="state.works.find(w=>w.id==='${cur.id}').activityType=this.value;renderPreview()" class="w-full px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs" />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">제목</label>
+                <input type="text" value="${esc(cur.title)}" oninput="state.works.find(w=>w.id==='${cur.id}').title=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs font-bold" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">자신의 글 (탐구 과정 · 프로젝트 내용 · 에세이 본문)</label>
+                <textarea rows="3" oninput="state.works.find(w=>w.id==='${cur.id}').content=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs leading-relaxed">${esc(cur.content)}</textarea>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">배우고 느낀 점 (나의 성찰 기록)</label>
+                <textarea rows="2" oninput="state.works.find(w=>w.id==='${cur.id}').reflection=this.value;renderPreview()" class="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs leading-relaxed">${esc(cur.reflection)}</textarea>
+              </div>
+
+              <!-- 1. NEW: Dedicated Student Activity Photos Upload Section -->
+              <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                <label class="block text-xs font-extrabold text-emerald-700 mb-1">📸 학생 활동 사진 올리기 (모둠활동·실험·답사·발표 현장 스냅)</label>
+                <label class="block border-2 border-dashed border-emerald-500/40 hover:border-emerald-600 rounded-xl p-2.5 text-center cursor-pointer bg-[var(--card)]">
+                  <span class="text-xs font-bold text-emerald-700">+ 클릭하여 활동 모습 사진 업로드 (여러 장 가능)</span>
+                  <input type="file" accept="image/*" multiple onchange="handleActivityPhotoUpload(this)" class="hidden" />
+                </label>
+                ${(cur.activityPhotos || []).length ? `
+                  <div class="space-y-1.5 mt-2">
+                    ${cur.activityPhotos.map(ap => `
+                      <div class="flex items-center gap-2 bg-[var(--card)] p-1.5 rounded-lg border border-[var(--border)]">
+                        <img src="${ap.dataUrl}" class="w-12 h-9 object-cover rounded" />
+                        <input type="text" value="${esc(ap.caption)}" oninput="state.works.find(w=>w.id==='${cur.id}').activityPhotos.find(p=>p.id==='${ap.id}').caption=this.value;renderPreview()" class="flex-1 px-2 py-1 text-xs rounded border border-[var(--border)] bg-[var(--background)]" placeholder="활동 사진 설명 입력..." />
+                        <button onclick="removeActivityPhoto('${ap.id}')" class="px-2 py-1 text-xs text-red-600 font-bold">✕</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- 2. Result Artwork / Charts Upload Section -->
+              <div>
+                <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">🎨 완성 결과물 그림 · 차트 · 포스터 이미지 올리기</label>
+                <label class="block border-2 border-dashed border-[var(--border)] hover:border-[var(--primary)] rounded-xl p-2.5 text-center cursor-pointer bg-[var(--card)]">
+                  <span class="text-xs font-bold text-[var(--primary)]">+ 클릭하여 완성 작품·차트 이미지 업로드</span>
+                  <input type="file" accept="image/*" multiple onchange="handleImageUpload(this)" class="hidden" />
+                </label>
+                ${(cur.images || []).length ? `
+                  <div class="space-y-1.5 mt-2">
+                    ${cur.images.map(img => `
+                      <div class="flex items-center gap-2 bg-[var(--card)] p-1.5 rounded-lg border border-[var(--border)]">
+                        <img src="${img.dataUrl}" class="w-12 h-9 object-cover rounded" />
+                        <input type="text" value="${esc(img.caption)}" oninput="state.works.find(w=>w.id==='${cur.id}').images.find(i=>i.id==='${img.id}').caption=this.value;renderPreview()" class="flex-1 px-2 py-1 text-xs rounded border border-[var(--border)] bg-[var(--background)]" placeholder="작품 설명(캡션)" />
+                        <button onclick="removeImage('${img.id}')" class="px-2 py-1 text-xs text-red-600 font-bold">✕</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- 3. Digital Attachments -->
+              <div>
+                <label class="block text-xs font-bold text-[var(--muted-foreground)] mb-1">📎 원본 디지털 파일 첨부 (보고서·발표자료·코드 등)</label>
+                <label class="block border border-dashed border-[var(--border)] hover:border-[var(--primary)] rounded-xl p-2 text-center cursor-pointer bg-[var(--card)]">
+                  <span class="text-xs font-semibold">+ 첨부파일 추가</span>
+                  <input type="file" multiple onchange="handleFileUpload(this)" class="hidden" />
+                </label>
+                ${(cur.attachments || []).length ? `
+                  <div class="space-y-1 mt-2">
+                    ${cur.attachments.map(att => `
+                      <div class="flex items-center justify-between bg-[var(--card)] px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-xs">
+                        <span class="truncate">📎 <strong>${esc(att.name)}</strong> (${esc(att.size)})</span>
+                        <button onclick="removeAttachment('${att.id}')" class="text-red-600 font-bold ml-2">✕</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          ` : ''}
+        `;
+        return;
+      }
+
+      if (editorTab === 'templates') {
+        panel.innerHTML = `
+          <div class="space-y-2.5">
+            <div class="p-3 rounded-xl bg-orange-500/10 border border-orange-500/30 text-xs">
+              <strong class="text-orange-700">✨ 잡지책 스타일 디자인 3종(시안 7·8·9) 신규 추가!</strong>
+              <div class="text-[var(--muted-foreground)] mt-0.5">총 9가지 양식 중 원하는 디자인을 클릭하면 우측 포트폴리오가 즉시 변환됩니다.</div>
+            </div>
+            ${TEMPLATES.map(t => {
+              const sel = state.selectedTemplate === t.id;
+              return `
+                <div onclick="selectTemplate('${t.id}')" class="p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                  sel ? 'border-[var(--primary)] bg-[var(--content)] shadow-sm' : 'border-[var(--border)] bg-[var(--background)] hover:border-[var(--muted-foreground)]'
+                }">
+                  <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center gap-2">
+                      <span class="px-2 py-0.5 rounded text-xs font-bold text-white" style="background:${t.accent}">${t.num} · ${t.badge}</span>
+                      <span class="text-sm font-extrabold">${t.name}</span>
+                    </div>
+                    <div class="flex gap-1">
+                      <span class="w-3.5 h-3.5 rounded-full border border-black/20" style="background:${t.bg}"></span>
+                      <span class="w-3.5 h-3.5 rounded-full border border-black/20" style="background:${t.accent}"></span>
+                    </div>
+                  </div>
+                  <p class="text-xs text-[var(--muted-foreground)] leading-relaxed">${t.desc}</p>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+    }
+
+    // Build Portfolio Inner HTML
+    function buildPortfolioInnerHtml(assetMap = null, isMobile = false) {
+      const tpl = TEMPLATES.find(t => t.id === state.selectedTemplate) || TEMPLATES[0];
+      const p = state.profile;
+      const allWorks = state.works;
+
+      // Filter works by Track / Subject / Project
+      let works = allWorks;
+      if (filterMode === '🚀 프로젝트 모음') {
+        works = allWorks.filter(w => w.entryType === 'project');
+      } else if (filterMode === '📚 교과별 모음') {
+        works = allWorks.filter(w => w.entryType !== 'project');
+      } else if (filterMode !== '전체' && filterMode !== '📸 활동사진첩') {
+        works = allWorks.filter(w => w.subject === filterMode || w.projectName === filterMode);
+      }
+
+      const subjectTags = [...new Set(allWorks.map(w => w.subject).filter(Boolean))];
+      const filterPills = ['전체', '🚀 프로젝트 모음', '📚 교과별 모음', '📸 활동사진첩', ...subjectTags];
+
+      const filterBar = `
+        <div class="flex flex-wrap gap-1.5">
+          ${filterPills.map(f => `
+            <button onclick="filterMode='${esc(f)}';renderPreview()" style="${
+              filterMode === f ? `background:${tpl.accent};color:#FFF;` : 'background:rgba(128,128,128,0.14);'
+            }" class="px-3 py-1 rounded-full text-xs font-bold transition-all">${esc(f)}</button>
+          `).join('')}
+        </div>
+      `;
+
+      // Dedicated Activity Photo Album View when '📸 활동사진첩' is selected!
+      if (filterMode === '📸 활동사진첩') {
+        const allPhotos = [];
+        allWorks.forEach(w => {
+          (w.activityPhotos || []).forEach(ap => {
+            const src = assetMap && assetMap.activityPhotos?.[ap.id] ? assetMap.activityPhotos[ap.id] : ap.dataUrl;
+            allPhotos.push({
+              src,
+              caption: ap.caption,
+              badge: w.entryType === 'project' ? `🚀 ${w.projectName}` : `📚 ${w.subject}`,
+              semester: w.semester,
+              workTitle: w.title
+            });
+          });
+        });
+
+        return `
+          <div style="background:${tpl.bg};color:${tpl.text};" class="rounded-2xl overflow-hidden border border-stone-300 shadow-md p-6">
+            <div class="pb-4 mb-6 border-b border-current/15">
+              <div class="text-xs font-bold uppercase tracking-wider" style="color:${tpl.accent}">STUDENT ACTIVITY PHOTO ARCHIVE · 1년의 활동 스냅 사진첩</div>
+              <h1 class="text-2xl md:text-3xl font-extrabold mt-1">📸 ${esc(p.studentName)}의 교실 & 프로젝트 현장 사진첩</h1>
+              <p class="text-xs opacity-80 mt-1">교과 수업과 프로젝트 현장에서 친구들과 함께 탐구하고 발표하며 기록한 생생한 활동 사진 모음입니다.</p>
+              <div class="mt-4">${filterBar}</div>
+            </div>
+            <div class="grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-5">
+              ${allPhotos.map((ph, idx) => `
+                <div class="rounded-xl overflow-hidden border border-current/15 bg-white text-slate-900 shadow-sm">
+                  <img src="${ph.src}" class="w-full h-52 object-cover" />
+                  <div class="p-4">
+                    <div class="flex items-center justify-between text-xs mb-1">
+                      <span class="px-2 py-0.5 rounded text-white font-bold" style="background:${tpl.accent}">SNAP #0${idx + 1} · ${esc(ph.badge)}</span>
+                      <span class="text-slate-500">${esc(ph.semester)}</span>
+                    </div>
+                    <div class="font-bold text-sm text-slate-900 mt-1">${esc(ph.caption)}</div>
+                    <div class="text-xs text-slate-500 mt-1">연계 활동: ${esc(ph.workTitle)}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // Helper to render Category Badge (Project vs Subject), Activity Photos, Result Images, and Attachments
+      const renderMedia = (w) => {
+        const badgeHtml = w.entryType === 'project'
+          ? `<div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+              <span class="px-2.5 py-0.5 rounded text-xs font-extrabold text-white" style="background:${tpl.accent}">🚀 프로젝트 · ${esc(w.projectName || '융합탐구')}</span>
+              ${w.linkedSubjects ? `<span class="px-2 py-0.5 rounded text-xs font-bold bg-black/10">${esc(w.linkedSubjects)}</span>` : ''}
+              ${w.projectRole ? `<span class="text-xs opacity-75">역할: ${esc(w.projectRole)}</span>` : ''}
+            </div>`
+          : `<div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+              <span class="px-2.5 py-0.5 rounded text-xs font-extrabold text-white" style="background:${tpl.accent}">📚 ${esc(w.subject)} 교과</span>
+              <span class="text-xs opacity-75">${esc(w.semester)} · ${esc(w.activityType)}</span>
+            </div>`;
+
+        const actPhotos = (w.activityPhotos || []).map(ap => {
+          const src = assetMap && assetMap.activityPhotos?.[ap.id] ? assetMap.activityPhotos[ap.id] : ap.dataUrl;
+          return `
+            <figure class="rounded-xl overflow-hidden border-2 border-emerald-600/30 bg-emerald-50/40 my-2">
+              <div class="px-2.5 py-1 bg-emerald-700 text-white text-xs font-bold flex items-center justify-between">
+                <span>📸 학생 활동 사진 (현장 스냅)</span>
+                <span class="opacity-80">${esc(w.semester)}</span>
+              </div>
+              <img src="${src}" alt="${esc(ap.caption)}" class="w-full max-h-52 object-cover" />
+              ${ap.caption ? `<figcaption class="text-xs text-center py-1.5 px-2 text-emerald-950 font-medium">${esc(ap.caption)}</figcaption>` : ''}
+            </figure>
+          `;
+        }).join('');
+
+        const imgs = (w.images || []).map(img => {
+          const src = assetMap && assetMap.images?.[img.id] ? assetMap.images[img.id] : img.dataUrl;
+          return `
+            <figure class="rounded-xl overflow-hidden border border-black/10 bg-white/90 my-2">
+              <div class="px-2.5 py-1 bg-slate-800 text-white text-xs font-bold">🎨 완성 작품 · 결과물 자료</div>
+              <img src="${src}" alt="${esc(img.caption)}" class="w-full max-h-52 object-cover" />
+              ${img.caption ? `<figcaption class="text-xs text-center py-1.5 px-2 text-slate-700 font-medium">${esc(img.caption)}</figcaption>` : ''}
+            </figure>
+          `;
+        }).join('');
+
+        const dualPhotoGrid = (actPhotos && imgs)
+          ? `<div class="grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-3 my-2">${actPhotos}${imgs}</div>`
+          : `${actPhotos}${imgs}`;
+
+        const atts = (w.attachments || []).map(att => {
+          const href = assetMap && assetMap.attachments?.[att.id] ? assetMap.attachments[att.id] : att.dataUrl;
+          return `<a href="${href}" download="${esc(att.name)}" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/5 border border-black/10 text-xs font-semibold mr-1.5 mt-1.5">📎 ${esc(att.name)}</a>`;
+        }).join('');
+
+        return { badgeHtml, actPhotos, imgs, dualPhotoGrid, atts };
+      };
+
+      // =========================================================================
+      // NEW TEMPLATE 7 (잡지책 1): 포토 에세이 라이프 매거진 (Kinfolk & Photo Spread)
+      // =========================================================================
+      if (tpl.id === 'mag-life') {
+        return `
+          <div style="background:#F6F5F0;color:#262A24;" class="rounded-2xl overflow-hidden border border-stone-300 shadow-lg p-6 ${isMobile ? 'p-4' : 'md:p-10'}">
+            <!-- Kinfolk Magazine Cover Header -->
+            <div class="border-b border-stone-400 pb-6 mb-8 text-center">
+              <div class="text-xs tracking-[0.25em] uppercase text-[#4A5D4E] font-bold mb-2">KINFOLK & STUDENT LIFE ISSUE · ${esc(p.academicYear)}</div>
+              <h1 class="${isMobile ? 'text-2xl' : 'text-4xl'} font-serif font-bold tracking-tight text-[#262A24]">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs md:text-sm text-stone-600 mt-2 max-w-2xl mx-auto font-serif italic">"${esc(p.subtitle)}"</p>
+              <div class="mt-4 inline-block px-4 py-1.5 rounded-full bg-[#E6E4DC] text-xs font-semibold text-[#262A24]">
+                EDITOR · ${esc(p.schoolInfo)} ${esc(p.studentName)}
+              </div>
+              <p class="text-xs text-stone-600 max-w-2xl mx-auto mt-3 leading-relaxed">${esc(p.introText)}</p>
+              <div class="mt-5 flex justify-center">${filterBar}</div>
+            </div>
+
+            <!-- Magazine Spread Stories -->
+            <div class="space-y-8">
+              ${works.map((w, idx) => {
+                const m = renderMedia(w);
+                return `
+                  <article class="bg-white rounded-2xl p-6 border border-stone-200 shadow-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-3 mb-4">
+                      ${m.badgeHtml}
+                      <span class="font-serif italic text-xs text-stone-500">ISSUE STORY 0${idx + 1} · ${esc(w.semester)}</span>
+                    </div>
+                    <h2 class="text-xl md:text-2xl font-serif font-extrabold text-[#262A24] mb-3">${esc(w.title)}</h2>
+                    <!-- Photo Spread: Activity Photos + Result Artwork side by side -->
+                    ${m.dualPhotoGrid}
+                    <div class="grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-12'} gap-5 mt-4 items-start">
+                      <div class="${isMobile ? '' : 'md:col-span-8'} text-xs md:text-sm text-stone-700 leading-relaxed whitespace-pre-line">
+                        ${esc(w.content)}
+                      </div>
+                      <div class="${isMobile ? '' : 'md:col-span-4'} p-4 rounded-xl bg-[#F6F5F0] border-l-4 border-[#4A5D4E] text-xs text-stone-800">
+                        <div class="font-bold text-[#4A5D4E] mb-1">EDITOR'S REFLECTION · 성찰</div>
+                        <p class="italic leading-relaxed">"${esc(w.reflection)}"</p>
+                        <div class="mt-2">${m.atts}</div>
+                      </div>
+                    </div>
+                  </article>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // =========================================================================
+      // NEW TEMPLATE 8 (잡지책 2): 팝 컬처 & 아트진 매거진 (Youth Zine & Special Feature)
+      // =========================================================================
+      if (tpl.id === 'mag-zine') {
+        return `
+          <div style="background:#FCFBF7;color:#111111;" class="rounded-2xl overflow-hidden border-2 border-zinc-900 shadow-xl p-5 ${isMobile ? 'p-4' : 'md:p-8'}">
+            <!-- Art-Zine Masthead -->
+            <div class="zine-card bg-[#FACC15] p-5 rounded-xl mb-6">
+              <div class="flex flex-wrap justify-between items-center text-xs font-black uppercase border-b-2 border-zinc-900 pb-2 mb-3">
+                <span class="px-2 py-0.5 bg-zinc-900 text-white rounded">YOUTH ZINE & PROJECT BOOK</span>
+                <span>${esc(p.academicYear)} · ${esc(p.schoolInfo)} ${esc(p.studentName)}</span>
+              </div>
+              <h1 class="${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-black tracking-tight">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs font-bold mt-2">${esc(p.introText)}</p>
+              <div class="mt-4 pt-3 border-t-2 border-zinc-900">${filterBar}</div>
+            </div>
+
+            <!-- Zine Articles & Project Special Features -->
+            <div class="space-y-6">
+              ${works.map((w, idx) => {
+                const m = renderMedia(w);
+                const isProj = w.entryType === 'project';
+                return `
+                  <article class="zine-card rounded-xl overflow-hidden ${isProj ? 'bg-orange-50' : 'bg-white'}">
+                    <div class="px-4 py-2.5 ${isProj ? 'bg-[#EA580C] text-white' : 'bg-zinc-900 text-white'} flex flex-wrap justify-between items-center gap-2 text-xs font-black">
+                      <span>${isProj ? `★ SPECIAL PROJECT FEATURE · ${esc(w.projectName)}` : `SUBJECT COLUMN 0${idx + 1} · ${esc(w.subject)}`}</span>
+                      <span>${esc(w.semester)} ${w.linkedSubjects ? `| ${esc(w.linkedSubjects)}` : ''}</span>
+                    </div>
+                    <div class="p-5">
+                      <h3 class="text-lg md:text-xl font-black mb-2">${esc(w.title)}</h3>
+                      ${w.projectRole ? `<div class="inline-block px-2.5 py-0.5 rounded bg-amber-300 border border-zinc-900 text-xs font-black mb-3">나의 역할: ${esc(w.projectRole)}</div>` : ''}
+                      ${m.dualPhotoGrid}
+                      <p class="text-xs md:text-sm text-zinc-800 leading-relaxed my-3 whitespace-pre-line">${esc(w.content)}</p>
+                      <div class="p-3.5 rounded-lg bg-[#FACC15]/40 border-2 border-zinc-900 text-xs font-bold">
+                        📌 ZINE NOTE (배운 점): ${esc(w.reflection)}
+                      </div>
+                      <div class="mt-2">${m.atts}</div>
+                    </div>
+                  </article>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // =========================================================================
+      // NEW TEMPLATE 9 (잡지책 3): 클래식 북저널 & 무크지 (Two-Page Book Spread)
+      // =========================================================================
+      if (tpl.id === 'mag-book') {
+        return `
+          <div style="background:#F7F3E8;color:#231F20;" class="rounded-2xl overflow-hidden border-2 border-[#C8B9A6] shadow-xl p-5 ${isMobile ? 'p-4' : 'md:p-8'}">
+            <!-- Literary Book Cover Header -->
+            <div class="border-b-2 border-[#6B1D2F] pb-5 mb-6 text-center">
+              <div class="text-xs font-serif font-bold tracking-widest text-[#6B1D2F]">LITERARY MOOOK & BOOK JOURNAL · ${esc(p.academicYear)}</div>
+              <h1 class="${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-serif font-extrabold text-[#231F20] mt-2">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs font-serif italic text-stone-600 mt-1">${esc(p.subtitle)} — ${esc(p.schoolInfo)} ${esc(p.studentName)}</p>
+              <div class="mt-4 flex justify-center">${filterBar}</div>
+            </div>
+
+            <!-- Two-Page Book Spreads -->
+            <div class="space-y-6">
+              ${works.map((w, idx) => {
+                const m = renderMedia(w);
+                const firstChar = (w.content || '배').charAt(0);
+                const restContent = (w.content || '').slice(1);
+                return `
+                  <article class="book-spine-spread rounded-xl border-2 border-[#C8B9A6] shadow-md grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2 divide-x divide-[#C8B9A6]'}">
+                    <!-- Left Page: Story & Reflection -->
+                    <div class="p-5 md:p-6 flex flex-col justify-between">
+                      <div>
+                        <div class="flex justify-between items-center text-xs font-serif font-bold text-[#6B1D2F] border-b border-[#D6C7B2] pb-1.5 mb-3">
+                          <span>${w.entryType === 'project' ? `PROJECT CHAPTER · ${esc(w.projectName)}` : `SUBJECT CHAPTER · ${esc(w.subject)}`}</span>
+                          <span>Page ${idx * 2 + 2}</span>
+                        </div>
+                        <h3 class="text-lg md:text-xl font-serif font-extrabold text-[#231F20] mb-3">${esc(w.title)}</h3>
+                        <p class="text-xs md:text-sm text-stone-800 leading-relaxed whitespace-pre-line">
+                          <span class="float-left text-3xl font-serif font-black text-[#6B1D2F] mr-2 leading-none">${esc(firstChar)}</span>${esc(restContent)}
+                        </p>
+                      </div>
+                      <div class="mt-4 p-3 rounded-lg bg-[#6B1D2F]/10 border-l-4 border-[#6B1D2F] text-xs text-stone-900 font-serif">
+                        <strong class="text-[#6B1D2F] block mb-0.5">성찰의 책갈피:</strong>
+                        "${esc(w.reflection)}"
+                      </div>
+                    </div>
+
+                    <!-- Right Page: Activity Photos & Visual Plates -->
+                    <div class="p-5 md:p-6 flex flex-col justify-between">
+                      <div>
+                        <div class="flex justify-between items-center text-xs font-serif font-bold text-[#8C6D46] border-b border-[#D6C7B2] pb-1.5 mb-3">
+                          <span>PHOTOGRAPHIC PLATES · 활동 사진 및 작품 도판</span>
+                          <span>Page ${idx * 2 + 3}</span>
+                        </div>
+                        ${m.actPhotos || m.imgs ? `${m.actPhotos}${m.imgs}` : `<div class="p-6 text-center text-xs text-stone-500 border border-dashed border-stone-300 rounded-lg">등록된 활동 사진/작품 이미지가 없습니다.</div>`}
+                      </div>
+                      <div class="mt-2">${m.atts}</div>
+                    </div>
+                  </article>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // 1. Editorial Magazine
+      if (tpl.id === 'editorial') {
+        return `
+          <div style="background:#FAF7F2;color:#1C1917;" class="rounded-2xl overflow-hidden border border-stone-300 shadow-md p-6 ${isMobile ? 'p-4' : 'md:p-8'}">
+            <div class="border-b-2 border-stone-900 pb-5 mb-6">
+              <div class="flex justify-between text-xs uppercase tracking-widest text-stone-500 pb-2 border-b border-stone-300">
+                <span>STUDENT PORTFOLIO EDITION</span>
+                <span>${esc(p.schoolInfo)} · ${esc(p.studentName)}</span>
+              </div>
+              <h1 class="${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-serif font-extrabold mt-3">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs md:text-sm italic text-stone-600 mt-1">"${esc(p.subtitle)}"</p>
+              <div class="mt-3 p-3.5 rounded-xl bg-[#F2ECE1] text-xs text-stone-700 leading-relaxed">${esc(p.introText)}</div>
+              <div class="mt-4">${filterBar}</div>
+            </div>
+            <div class="grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6">
+              ${works.map((w, i) => {
+                const m = renderMedia(w);
+                return `
+                  <article class="${i === 0 && !isMobile ? 'md:col-span-2' : ''} border-b border-stone-300 pb-5">
+                    ${m.badgeHtml}
+                    <h3 class="text-lg font-serif font-bold text-stone-900">${esc(w.title)}</h3>
+                    ${m.dualPhotoGrid}
+                    <p class="text-xs md:text-sm text-stone-700 leading-relaxed whitespace-pre-line">${esc(w.content)}</p>
+                    ${w.reflection ? `<div class="mt-2.5 p-3 rounded-lg bg-[#F2ECE1] border-l-4 border-[#C85A32] text-xs text-stone-800"><strong>성찰 노트:</strong> ${esc(w.reflection)}</div>` : ''}
+                    <div>${m.atts}</div>
+                  </article>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // 2. Nordic Gallery
+      if (tpl.id === 'gallery') {
+        return `
+          <div style="background:#F8FAFC;color:#0F172A;" class="rounded-2xl overflow-hidden border border-slate-200 shadow-md">
+            <div class="bg-white p-6 text-center border-b border-slate-200">
+              <span class="px-3 py-0.5 rounded-full text-xs font-bold bg-[#3D6B58]/15 text-[#3D6B58]">EXHIBITION CATALOGUE · ${esc(p.academicYear)}</span>
+              <h1 class="text-2xl md:text-3xl font-light mt-2">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs text-slate-500 mt-1 max-w-xl mx-auto">${esc(p.schoolInfo)} ${esc(p.studentName)} — ${esc(p.introText)}</p>
+              <div class="mt-4 flex justify-center">${filterBar}</div>
+            </div>
+            <div class="p-6 grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-5">
+              ${works.map((w) => {
+                const m = renderMedia(w);
+                return `
+                  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm p-4 flex flex-col justify-between">
+                    <div>
+                      ${m.badgeHtml}
+                      <h3 class="text-base font-bold text-slate-900">${esc(w.title)}</h3>
+                      ${m.actPhotos}${m.imgs}
+                      <p class="text-xs text-slate-600 leading-relaxed">${esc(w.content)}</p>
+                    </div>
+                    <div class="mt-3 pt-2.5 border-t border-slate-100 text-xs text-emerald-900 bg-emerald-50/60 p-2.5 rounded-lg">
+                      <strong>작가 노트:</strong> ${esc(w.reflection)}
+                      <div>${m.atts}</div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // 3. Chronicle Timeline
+      if (tpl.id === 'timeline') {
+        return `
+          <div style="background:#F4F1EA;color:#1B2A4A;" class="rounded-2xl overflow-hidden border border-stone-300 shadow-md">
+            <div style="background:#1B2A4A;color:#FFF;" class="p-6">
+              <div class="text-xs text-amber-300 font-bold">365 DAYS GROWTH CHRONICLE · ${esc(p.schoolInfo)} ${esc(p.studentName)}</div>
+              <h1 class="text-2xl font-bold mt-1">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs text-slate-300 mt-1">${esc(p.introText)}</p>
+              <div class="mt-4">${filterBar}</div>
+            </div>
+            <div class="p-6">
+              <div class="pl-5 border-l-4 border-amber-500 space-y-5">
+                ${works.map(w => {
+                  const m = renderMedia(w);
+                  return `
+                    <div class="bg-white rounded-xl p-4 border border-stone-200 shadow-sm relative">
+                      ${m.badgeHtml}
+                      <h3 class="text-base font-bold">${esc(w.title)}</h3>
+                      ${m.dualPhotoGrid}
+                      <p class="text-xs text-slate-600 leading-relaxed">${esc(w.content)}</p>
+                      <div class="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-950">
+                        <strong>🌱 성장 기록:</strong> ${esc(w.reflection)}
+                      </div>
+                      <div>${m.atts}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 4. Academic Research Journal
+      if (tpl.id === 'academic') {
+        return `
+          <div class="bg-white text-slate-900 rounded-2xl overflow-hidden border border-slate-300 shadow-md">
+            <div style="background:#1E3A5F;color:#FFF;" class="p-6">
+              <div class="text-xs text-blue-200 font-bold">ACADEMIC PORTFOLIO & RESEARCH ARCHIVE</div>
+              <h1 class="text-2xl font-bold mt-1">${esc(p.portfolioTitle)}</h1>
+              <div class="text-xs text-blue-100 mt-2">작성자: ${esc(p.schoolInfo)} ${esc(p.studentName)}</div>
+            </div>
+            <div class="p-6 space-y-5">
+              <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div class="text-xs font-bold text-[#1E3A5F] mb-1">초록 및 분류 필터</div>
+                <p class="text-xs text-slate-600 mb-3">${esc(p.introText)}</p>
+                ${filterBar}
+              </div>
+              ${works.map((w, i) => {
+                const m = renderMedia(w);
+                return `
+                  <div class="border border-slate-300 rounded-xl overflow-hidden">
+                    <div class="bg-slate-100 px-4 py-2.5 border-b border-slate-300 flex flex-wrap justify-between items-center gap-2">
+                      <span class="text-sm font-bold"><strong class="text-[#1E3A5F]">0${i + 1}.</strong> ${esc(w.title)}</span>
+                      ${m.badgeHtml}
+                    </div>
+                    <div class="p-4">
+                      ${m.dualPhotoGrid}
+                      <div class="grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-3 text-xs">
+                        <div class="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                          <div class="font-bold text-[#1E3A5F] mb-1">1. 탐구 및 프로젝트 수행 내용</div>
+                          <p class="text-slate-700 leading-relaxed">${esc(w.content)}</p>
+                        </div>
+                        <div class="p-3 rounded-lg bg-blue-50/60 border border-blue-200">
+                          <div class="font-bold text-blue-900 mb-1">2. 결론 및 자기 성찰</div>
+                          <p class="text-slate-700 leading-relaxed">${esc(w.reflection)}</p>
+                        </div>
+                      </div>
+                      <div>${m.atts}</div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // 5. Creative Scrapbook
+      if (tpl.id === 'scrapbook') {
+        return `
+          <div class="scrapbook-bg text-[#3E2723] rounded-2xl overflow-hidden border-2 border-amber-900/20 shadow-md p-6">
+            <div class="bg-white rounded-2xl p-5 border border-amber-900/15 shadow-sm text-center mb-6">
+              <div class="washi-tape mx-auto -mt-8 mb-2"></div>
+              <span class="text-xs font-extrabold text-[#E06D53]">🎨 ${esc(p.schoolInfo)} ${esc(p.studentName)}의 스크랩북</span>
+              <h1 class="text-2xl font-extrabold mt-1">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs text-stone-600 mt-1">${esc(p.introText)}</p>
+              <div class="mt-3 flex justify-center">${filterBar}</div>
+            </div>
+            <div class="grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6">
+              ${works.map(w => {
+                const m = renderMedia(w);
+                return `
+                  <div class="bg-white p-4 rounded-2xl shadow border border-stone-200">
+                    <div class="washi-tape mx-auto -mt-7 mb-2"></div>
+                    ${m.badgeHtml}
+                    <h3 class="text-base font-extrabold mb-1.5">${esc(w.title)}</h3>
+                    ${m.actPhotos}${m.imgs}
+                    <p class="text-xs text-stone-600 leading-relaxed">${esc(w.content)}</p>
+                    <div class="mt-3 p-3 rounded-xl bg-[#FFF9DB] border border-amber-300 text-xs">
+                      <strong>📌 나의 한 줄 일기:</strong> ${esc(w.reflection)}
+                    </div>
+                    <div>${m.atts}</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // 6. Interactive Showcase Deck
+      if (slideIndex >= works.length) slideIndex = 0;
+      const curSlide = works[slideIndex] || works[0];
+      const sm = curSlide ? renderMedia(curSlide) : { badgeHtml: '', dualPhotoGrid: '', atts: '' };
+
+      return `
+        <div class="bg-zinc-900 text-zinc-100 rounded-2xl overflow-hidden border border-zinc-700 shadow-xl">
+          <div class="bg-zinc-950 px-5 py-4 border-b border-zinc-800 flex flex-wrap justify-between items-center gap-2">
+            <div>
+              <div class="text-xs font-bold text-teal-400">INTERACTIVE SHOWCASE DECK</div>
+              <h1 class="text-lg font-bold text-white">${esc(p.portfolioTitle)} — ${esc(p.studentName)}</h1>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs">
+              <button onclick="slideIndex=(slideIndex-1+${works.length||1})%${works.length||1};renderPreview()" class="px-2.5 py-1 rounded bg-zinc-800 text-white font-bold">← 이전</button>
+              <span class="px-2 py-1 rounded bg-teal-500/20 text-teal-300 font-bold">${slideIndex + 1} / ${works.length || 1}</span>
+              <button onclick="slideIndex=(slideIndex+1)%${works.length||1};renderPreview()" class="px-2.5 py-1 rounded bg-teal-500 text-zinc-950 font-bold">다음 →</button>
+            </div>
+          </div>
+          <div class="p-6">
+            <div class="mb-4">${filterBar}</div>
+            ${curSlide ? `
+              <div class="bg-zinc-800 rounded-xl p-5 border border-zinc-700">
+                ${sm.badgeHtml}
+                <h2 class="text-xl font-bold text-white mt-2 mb-2">${esc(curSlide.title)}</h2>
+                ${sm.dualPhotoGrid}
+                <p class="text-xs md:text-sm text-zinc-300 leading-relaxed">${esc(curSlide.content)}</p>
+                <div class="mt-3 p-3 rounded-xl bg-zinc-900 border border-teal-500/40 text-xs text-teal-100">
+                  <strong class="text-teal-400">💡 배우고 성장한 점:</strong> ${esc(curSlide.reflection)}
+                </div>
+                <div class="mt-2">${sm.atts}</div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderPreview() {
+      const tpl = TEMPLATES.find(t => t.id === state.selectedTemplate) || TEMPLATES[0];
+      document.getElementById('preview-tpl-indicator').textContent = `적용 양식: [${tpl.num}] ${tpl.name}`;
+
+      ['desktop', 'mobile', 'pdf'].forEach(m => {
+        const btn = document.getElementById('pm-' + m);
+        btn.className = m === previewMode
+          ? 'px-2.5 py-1 rounded text-xs font-semibold bg-[var(--primary)] text-[var(--primary-foreground)]'
+          : 'px-2.5 py-1 rounded text-xs font-semibold text-[var(--muted-foreground)]';
+      });
+
+      const stage = document.getElementById('preview-stage');
+
+      if (previewMode === 'pdf') {
+        const p = state.profile;
+        stage.innerHTML = `
+          <div class="max-w-3xl mx-auto bg-white text-slate-900 p-8 rounded-xl shadow-lg border border-slate-300">
+            <div class="border-b-4 pb-4 mb-5" style="border-color:${tpl.accent}">
+              <div class="text-xs font-bold uppercase tracking-wider" style="color:${tpl.accent}">STUDENT PORTFOLIO PRINT EDITION · ${esc(p.academicYear)}</div>
+              <h1 class="text-2xl font-extrabold mt-1">${esc(p.portfolioTitle)}</h1>
+              <p class="text-xs text-slate-600 mt-1">${esc(p.subtitle)}</p>
+              <div class="text-xs text-slate-700 mt-2 font-semibold">${esc(p.schoolInfo)} · ${esc(p.studentName)} (적용 테마: ${tpl.name})</div>
+            </div>
+            <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs text-slate-700 mb-5">
+              <strong>나의 소개:</strong> ${esc(p.introText)}
+            </div>
+            <div class="space-y-4">
+              ${state.works.map((w, i) => `
+                <div class="border border-slate-300 rounded-lg p-4 break-inside-avoid">
+                  <div class="flex justify-between items-center border-b border-slate-200 pb-1.5 mb-2">
+                    <span class="text-sm font-bold"><strong style="color:${tpl.accent}">0${i + 1}. [${w.entryType === 'project' ? '🚀 프로젝트: ' + esc(w.projectName) : '📚 교과: ' + esc(w.subject)}]</strong> ${esc(w.title)}</span>
+                    <span class="text-xs text-slate-500">${esc(w.semester)}</span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 my-2">
+                    ${(w.activityPhotos || []).map(ap => `<div><div class="text-xs font-bold text-emerald-800 mb-0.5">📸 활동 사진</div><img src="${ap.dataUrl}" class="w-full max-h-36 object-cover rounded" /><div class="text-xs text-slate-500 mt-0.5">${esc(ap.caption)}</div></div>`).join('')}
+                    ${(w.images || []).map(img => `<div><div class="text-xs font-bold text-slate-800 mb-0.5">🎨 결과물 자료</div><img src="${img.dataUrl}" class="w-full max-h-36 object-cover rounded" /><div class="text-xs text-slate-500 mt-0.5">${esc(img.caption)}</div></div>`).join('')}
+                  </div>
+                  <p class="text-xs text-slate-700 leading-relaxed">${esc(w.content)}</p>
+                  <div class="mt-2 p-2 rounded bg-slate-50 border-l-4 text-xs text-slate-700" style="border-color:${tpl.accent}">
+                    <strong>배우고 느낀 점:</strong> ${esc(w.reflection)}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (previewMode === 'mobile') {
+        stage.innerHTML = `
+          <div class="mobile-shell">
+            <div class="mobile-notch"></div>
+            <div class="p-2">${buildPortfolioInnerHtml(null, true)}</div>
+          </div>
+        `;
+        return;
+      }
+
+      stage.innerHTML = `<div class="max-w-4xl mx-auto">${buildPortfolioInnerHtml(null, false)}</div>`;
+    }
+
+    function downloadZipPackage() {
+      const files = [];
+      const assetMap = { activityPhotos: {}, images: {}, attachments: {} };
+
+      state.works.forEach((w, wi) => {
+        (w.activityPhotos || []).forEach((ap, pi) => {
+          const ext = ap.dataUrl.includes('svg') ? 'svg' : 'png';
+          const safeName = `${wi + 1}_act_${pi + 1}_${(ap.name || 'activity').replace(/[^a-zA-Z0-9가-힣._-]/g, '_')}`;
+          const finalPath = `assets/activity_photos/${safeName.includes('.') ? safeName : safeName + '.' + ext}`;
+          files.push({ path: finalPath, content: dataUrlToUint8Array(ap.dataUrl) });
+          assetMap.activityPhotos[ap.id] = finalPath;
+        });
+
+        (w.images || []).forEach((img, ii) => {
+          const ext = img.dataUrl.includes('svg') ? 'svg' : 'png';
+          const safeName = `${wi + 1}_work_${ii + 1}_${(img.name || 'image').replace(/[^a-zA-Z0-9가-힣._-]/g, '_')}`;
+          const finalPath = `assets/images/${safeName.includes('.') ? safeName : safeName + '.' + ext}`;
+          files.push({ path: finalPath, content: dataUrlToUint8Array(img.dataUrl) });
+          assetMap.images[img.id] = finalPath;
+        });
+
+        (w.attachments || []).forEach((att, ai) => {
+          const safeName = `${wi + 1}_file_${ai + 1}_${(att.name || 'file.txt').replace(/[^a-zA-Z0-9가-힣._-]/g, '_')}`;
+          const finalPath = `assets/attachments/${safeName}`;
+          files.push({ path: finalPath, content: dataUrlToUint8Array(att.dataUrl) });
+          assetMap.attachments[att.id] = finalPath;
+        });
+      });
+
+      const bodyHtml = buildPortfolioInnerHtml(assetMap, false);
+      const standaloneHtml = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${esc(state.profile.portfolioTitle)} - ${esc(state.profile.studentName)}</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-100 p-4 md:p-8">
+  <div class="max-w-4xl mx-auto">${bodyHtml}</div>
+</body>
+</html>`;
+
+      files.push({ path: 'index.html', content: standaloneHtml });
+      files.push({ path: 'project-backup.json', content: JSON.stringify(state, null, 2) });
+
+      const zipBlob = createZipBlob(files);
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(state.profile.studentName || '학생')}_포트폴리오_${state.selectedTemplate}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 400);
+      showToast('📦 ZIP 압축 파일(index.html + activity_photos + images + attachments) 다운로드 완료!');
+    }
+
+    function exportPdfPrint() {
+      previewMode = 'pdf';
+      renderPreview();
+      setTimeout(() => window.print(), 200);
+    }
+
+    // Initialize
+    renderEditor();
+    renderPreview();
+  </script>
+</body>
+</html>
