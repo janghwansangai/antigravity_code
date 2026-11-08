@@ -122,102 +122,117 @@ export const SCHOOL_LEVEL_SUBJECTS = {
   high: ["국어", "수학", "영어", "통합사회", "통합과학", "한국사", "정보/AI", "예술/체육", "진로·자율·동아리"]
 };
 
+// 포트폴리오 디자인 시안 12종 (1~9: 깔끔한 디자인, 10~12: 귀여운 디자인)
+// id는 저장된 작업 파일과의 호환을 위해 그대로 유지합니다.
+// colors는 디자인 고르기 미리보기 그림과 PDF 강조색에 쓰입니다. 실제 디자인은 portfolioRenderer.js의 CSS에 있습니다.
 export const DESIGN_TEMPLATES = [
   {
-    id: "mag-life",
-    num: "시안 7 ★잡지책 1",
-    name: "포토 에세이 라이프 매거진",
-    engName: "Kinfolk & Photo Spread",
-    badge: "화보 잡지책",
-    description: "킨포크·라이프 매거진처럼 학생들의 [활동 사진]과 [완성 작품]이 큼직한 화보 스프레드로 펼쳐지고 감성적인 에세이가 따라오는 잡지책 양식",
-    colors: { bg: "#F6F5F0", text: "#262A24", accent: "#4A5D4E", surface: "#FFFFFF", border: "#D8D4C8" },
-    bestFor: "활동 스냅 사진과 프로젝트·교과 에세이를 화보집처럼 남기고 싶을 때"
-  },
-  {
-    id: "mag-zine",
-    num: "시안 8 ★잡지책 2",
-    name: "팝 컬처 & 아트진 매거진",
-    engName: "Youth Zine & Special Issue",
-    badge: "특집호 잡지책",
-    description: "독립 아트진(Zine) 스타일의 대담한 블랙 보더 프레임과 [프로젝트 특집 기사 박스], [활동 사진 필름 스트립]이 돋보이는 트렌디 잡지책 양식",
-    colors: { bg: "#FCFBF7", text: "#111111", accent: "#EA580C", surface: "#FACC15", border: "#111111" },
-    bestFor: "동아리·융합 프로젝트 특집호 및 개성 넘치는 청소년 매거진 스타일"
-  },
-  {
-    id: "mag-book",
-    num: "시안 9 ★잡지책 3",
-    name: "클래식 북저널 & 무크지",
-    engName: "Literary Book-Spread",
-    badge: "양면 펼침 책자형",
-    description: "실제 단행본 잡지책(무크지)을 양쪽으로 펼친 듯한 2면 북 스프레드(좌측 에세이·우측 활동사진 도판)와 첫 글자 장식문자가 우아한 책자 양식",
-    colors: { bg: "#F7F3E8", text: "#231F20", accent: "#6B1D2F", surface: "#EFE9D8", border: "#C8B9A6" },
-    bestFor: "교내 문집, 1년 종합 학술·문학 단행본 스타일 포트폴리오"
-  },
-  {
     id: "editorial",
-    num: "시안 1",
-    name: "모던 에디토리얼 매거진",
-    engName: "Archive & Press",
-    badge: "신문·칼럼형",
-    description: "세련된 명조 타이포그래피와 대표 아티클(Cover Story) + 2단 칼럼 레이아웃",
-    colors: { bg: "#FAF7F2", text: "#1C1917", accent: "#C85A32", surface: "#F2ECE1", border: "#D6CFC5" },
-    bestFor: "국어·사회·독서록 등 글과 생각이 풍부한 포트폴리오"
+    num: 1,
+    name: "신문 칼럼",
+    description: "명조체 제목과 2단 칼럼. 첫 번째 기록이 큰 머리기사가 돼요.",
+    bestFor: "국어·사회·독서처럼 글이 많은 기록",
+    colors: { bg: "#FAF7F2", text: "#1C1917", accent: "#C85A32", surface: "#F2ECE1", border: "#D6CFC5" }
   },
   {
     id: "gallery",
-    num: "시안 2",
-    name: "노르딕 미니멀 갤러리",
-    engName: "Pure Canvas",
-    badge: "미술관·전시형",
-    description: "미술관 도록처럼 여백의 미를 살려 학생의 그림·사진·메이커 작품과 캡션에 시선이 온전히 집중되는 양식",
-    colors: { bg: "#F8FAFC", text: "#0F172A", accent: "#3D6B58", surface: "#FFFFFF", border: "#E2E8F0" },
-    bestFor: "미술·디자인·실과·창작 활동 등 시각 결과물 중심 포트폴리오"
+    num: 2,
+    name: "미니멀 갤러리",
+    description: "하얀 여백에 사진과 작품이 돋보이는 전시회 도록 느낌이에요.",
+    bestFor: "미술·사진·만들기 작품",
+    colors: { bg: "#FFFFFF", text: "#111827", accent: "#3D6B58", surface: "#F3F4F6", border: "#E5E7EB" }
   },
   {
     id: "timeline",
-    num: "시안 3",
-    name: "크로니클 성장 타임라인",
-    engName: "365 Days Journey",
-    badge: "연대기·성장형",
-    description: "3월 입학부터 2월 종업까지 1학기·2학기 시간의 흐름에 따라 배움의 궤적과 성찰을 잇는 스토리텔링 양식",
-    colors: { bg: "#F4F1EA", text: "#1B2A4A", accent: "#D97706", surface: "#FFFFFF", border: "#CBD5E1" },
-    bestFor: "1년 전체의 성장 과정과 학기별 변화를 강조하고 싶은 전 학년 학생"
+    num: 3,
+    name: "성장 타임라인",
+    description: "3월부터 2월까지 날짜 순서대로 자동 정렬돼 한 줄로 이어져요.",
+    bestFor: "1년 동안의 변화를 보여 주고 싶을 때",
+    colors: { bg: "#F4F1EA", text: "#1B2A4A", accent: "#D97706", surface: "#FFFFFF", border: "#CBD5E1" }
   },
   {
     id: "academic",
-    num: "시안 4",
-    name: "아카데믹 리서치 저널",
-    engName: "Scholar & Lab",
-    badge: "탐구보고서·세특형",
-    description: "목차(TOC) 자동 생성, 교과·프로젝트 번호 체계, [활동내용 → 성찰 및 결론] 구조로 정돈된 학술 리포트 양식",
-    colors: { bg: "#FFFFFF", text: "#0F172A", accent: "#1E3A5F", surface: "#F8FAFC", border: "#CBD5E1" },
-    bestFor: "중·고등 심화 탐구 보고서, 과학·수학·정보 프로젝트 및 PDF 인쇄 제출용"
+    num: 4,
+    name: "탐구 보고서",
+    description: "번호가 붙은 단정한 보고서. 활동 내용과 느낀 점이 나란히 놓여요.",
+    bestFor: "과학·수학·정보 탐구, 인쇄 제출용",
+    colors: { bg: "#FFFFFF", text: "#0F172A", accent: "#1E3A5F", surface: "#F1F5F9", border: "#CBD5E1" }
   },
   {
     id: "scrapbook",
-    num: "시안 5",
-    name: "아틀리에 스크랩북",
-    engName: "My Studio Note",
-    badge: "다이어리·감성형",
-    description: "도트 노트 질감 배경, 마스킹 테이프, 폴라로이드 사진 프레임과 포스트잇 성찰 메모가 어우러진 따뜻한 기록장",
-    colors: { bg: "#FFFDF7", text: "#3E2723", accent: "#E06D53", surface: "#FFF9DB", border: "#E6DEC8" },
-    bestFor: "초·중등 학급 활동, 체험학습, 창작 일기 등 친근하고 개성 있는 기록장"
+    num: 5,
+    name: "스크랩북",
+    description: "모눈 종이 위에 사진과 메모를 붙인 듯한 따뜻한 기록장이에요.",
+    bestFor: "체험학습·학급 활동·일기",
+    colors: { bg: "#FFFDF7", text: "#3E2723", accent: "#E06D53", surface: "#FFF4D6", border: "#E6DEC8" }
   },
   {
     id: "showcase",
-    num: "시안 6",
-    name: "인터랙티브 쇼케이스 데크",
-    engName: "Chapter Card Book",
-    badge: "웹북·프레젠테이션형",
-    description: "스마트폰·태블릿·PC에서 카드뉴스나 웹북처럼 챕터를 넘겨보며 발표하기 좋은 다크/모던 쇼케이스 양식",
-    colors: { bg: "#18181B", text: "#F4F4F5", accent: "#14B8A6", surface: "#27272A", border: "#3F3F46" },
-    bestFor: "핸드폰 링크/파일 열람, 학부모 참관수업·발표회 시연용 포트폴리오"
+    num: 6,
+    name: "발표 슬라이드",
+    description: "한 장씩 넘겨 보는 어두운 화면. 키보드 ← → 로도 넘길 수 있어요.",
+    bestFor: "발표회, 휴대폰으로 보여 주기",
+    colors: { bg: "#18181B", text: "#F4F4F5", accent: "#14B8A6", surface: "#27272A", border: "#3F3F46" }
+  },
+  {
+    id: "mag-life",
+    num: 7,
+    name: "포토 매거진",
+    description: "큰 사진 한 장과 짧은 에세이가 잡지 화보처럼 펼쳐져요.",
+    bestFor: "활동 사진이 많은 기록",
+    colors: { bg: "#F6F5F0", text: "#262A24", accent: "#4A5D4E", surface: "#FFFFFF", border: "#D8D4C8" }
+  },
+  {
+    id: "mag-zine",
+    num: 8,
+    name: "팝 아트진",
+    description: "굵은 검정 테두리와 노란색 포인트로 개성 있게 꾸며요.",
+    bestFor: "동아리·프로젝트 특집호",
+    colors: { bg: "#FCFBF7", text: "#111111", accent: "#EA580C", surface: "#FACC15", border: "#111111" }
+  },
+  {
+    id: "mag-book",
+    num: 9,
+    name: "책 펼침면",
+    description: "왼쪽 쪽에는 글, 오른쪽 쪽에는 사진. 책을 펼친 모양이에요.",
+    bestFor: "문집, 1년 기록집",
+    colors: { bg: "#F7F3E8", text: "#231F20", accent: "#6B1D2F", surface: "#EFE9D8", border: "#C8B9A6" }
+  },
+  // ---- 귀여운 디자인 (초등학생용) ----
+  {
+    id: "pastel",
+    num: 10,
+    group: "cute",
+    name: "말랑 파스텔",
+    description: "분홍·민트·보라 파스텔 카드와 말풍선 메모가 말랑말랑 귀여워요.",
+    bestFor: "초등학생 1년 기록, 학급 활동",
+    colors: { bg: "#FFF4F7", text: "#4A3B52", accent: "#FF7EA8", surface: "#FFFFFF", border: "#FFD6E3" }
+  },
+  {
+    id: "crayon",
+    num: 11,
+    group: "cute",
+    name: "크레파스 그림일기",
+    description: "줄 공책 위에 손으로 그린 듯한 테두리. 그림일기처럼 정겨워요.",
+    bestFor: "그림·일기·독서 감상",
+    colors: { bg: "#FFFDF2", text: "#3B3A36", accent: "#FF6B6B", surface: "#FFFFFF", border: "#3B3A36" }
+  },
+  {
+    id: "rainbow",
+    num: 12,
+    group: "cute",
+    name: "알록달록 무지개",
+    description: "활동마다 무지개 색 카드로 바뀌어요. 밝고 신나는 느낌!",
+    bestFor: "체험학습·동아리·발표회",
+    colors: { bg: "#FFFFFF", text: "#2F3A4A", accent: "#7C6CF2", surface: "#FFF1C9", border: "#E9E5FF" }
   }
 ];
 
+export const DEFAULT_TEMPLATE_ID = "pastel";
+
 export function createSamplePortfolioData() {
   return {
-    selectedTemplate: "mag-life",
+    selectedTemplate: DEFAULT_TEMPLATE_ID,
     schoolLevel: "middle",
     customSubjects: ["국어", "수학", "사회", "과학", "영어", "미술", "음악", "체육", "기술·가정", "정보", "창의적 체험활동"],
     customProjects: ["생태 도시 열섬 해결 프로젝트", "우리 마을 역사 다큐 프로젝트", "AI 급식 잔반 제로 프로젝트"],
@@ -337,10 +352,10 @@ export function createSamplePortfolioData() {
         attachments: [
           {
             id: "att-3",
-            name: "아몬드_문학비평문_김하늘.txt",
-            size: "4.2 KB",
-            mimeType: "text/plain",
-            dataUrl: "data:text/plain;charset=utf-8," + encodeURIComponent("제목: 『아몬드』를 읽고 바라본 공감의 의미\n작성자: 한빛중학교 2학년 3반 김하늘")
+            name: "아몬드_독서감상문_김하늘.pdf",
+            size: "0.7 KB",
+            mimeType: "application/pdf",
+            dataUrl: "data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA1OTUgODQyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA1IDAgUiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAxNjcgPj4Kc3RyZWFtCkJUIC9GMSAyOCBUZiA3MiA3NjAgVGQgKEJvb2sgUmVwb3J0OiBBbG1vbmQpIFRqIEVUCkJUIC9GMSAxNCBUZiA3MiA3MjAgVGQgKFNhbXBsZSBQREYgYXR0YWNobWVudCAtIFN0dWRlbnQgUG9ydGZvbGlvIE1ha2VyKSBUaiBFVAowLjk1IDAuNDIgMC40MiByZyA3MiA2NDAgNDUxIDQwIHJlIGYKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA0NTggMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo1MjgKJSVFT0YK"
           }
         ]
       },
@@ -407,7 +422,7 @@ export function createSamplePortfolioData() {
 
 export function createBlankPortfolioData() {
   return {
-    selectedTemplate: "mag-life",
+    selectedTemplate: DEFAULT_TEMPLATE_ID,
     schoolLevel: "middle",
     customSubjects: ["국어", "수학", "사회", "과학", "영어", "미술", "음악", "체육", "기술·가정", "정보", "창의적 체험활동"],
     customProjects: ["나의 융합 탐구 프로젝트", "우리 모둠 자율 프로젝트"],
