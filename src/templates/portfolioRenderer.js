@@ -1,7 +1,43 @@
-import { DESIGN_TEMPLATES } from '../data/sampleData.js';
+/**
+ * 포트폴리오 렌더러
+ *
+ * 12종 시안은 모두 "같은 HTML 구조"를 쓰고, 디자인 차이는 CSS 테마(.pf-t-<id>)로만 만듭니다.
+ *   - 새 시안 추가: sampleData.js의 DESIGN_TEMPLATES에 항목을 넣고, 아래 CSS에 .pf-t-<id> 블록만 추가
+ *   - 휴대폰 화면: @container 규칙이 상자 폭(640px 이하)에 맞춰 자동으로 한 줄 배치로 바꿉니다
+ *
+ * HTML 뼈대
+ *   .pf-wrap > .pf.pf-t-<id>[data-filter]
+ *     header.pf-cover      표지(학년도·학교, 제목, 한 줄 소개, 이름, 소개글)
+ *     nav.pf-filters       분류 버튼(전체/교과/프로젝트/작품/활동 사진) - 해당 항목이 있을 때만
+ *     .pf-slide-nav        (발표 슬라이드 시안만) 이전/다음
+ *     .pf-works > article.pf-work[data-kind=subject|project]
+ *        header.pf-head    분류 배지, 시기, 제목, 역할
+ *        .pf-media         사진들 (figure.pf-fig[data-kind=art|activity])
+ *        .pf-text          활동 내용, 배우고 느낀 점, 첨부파일(PDF는 '열어 보기' 카드)
+ *     section.pf-album     작품 / 활동 사진 모아 보기(분류 버튼으로 전환)
+ *
+ * 사진 종류 (예전 데이터 형식 그대로)
+ *   work.images         → 🎨 작품 사진 (kind: 'art')
+ *   work.activityPhotos → 📸 활동 사진 (kind: 'activity')
+ *   work.coverPhotoId   → 대표 사진(맨 앞에 크게)
+ *
+ * 이 파일은 브라우저 API를 쓰지 않으므로 Node(scripts/build-mockups.mjs)에서도 그대로 불러 쓸 수 있습니다.
+ */
+import { DESIGN_TEMPLATES, DEFAULT_TEMPLATE_ID } from '../data/sampleData.js';
+
+// 글꼴은 화면 표시를 막지 않도록 비동기로 불러옵니다(인터넷이 없거나 막혀 있으면 기본 글꼴로 보임).
+const FONT_URL =
+  'https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Jua&family=Nanum+Myeongjo:wght@400;700;800&family=Noto+Sans+KR:wght@300;400;500;700;800;900&display=swap';
+export const FONT_LINKS_HTML =
+  '<link rel="preconnect" href="https://fonts.googleapis.com" />' +
+  '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />' +
+  `<link rel="preload" as="style" href="${FONT_URL}" onload="this.onload=null;this.rel='stylesheet'" />` +
+  `<noscript><link rel="stylesheet" href="${FONT_URL}" /></noscript>`;
+
+const SCHOOL_YEAR_MONTHS = ['3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월', '1월', '2월'];
 
 export function escapeHtml(str = '') {
-  return String(str)
+  return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -9,1055 +45,647 @@ export function escapeHtml(str = '') {
     .replace(/'/g, '&#39;');
 }
 
+// 사진 주소(data URL)는 수 MB가 될 수 있어, 특수문자가 있을 때만 이스케이프합니다.
+function escapeUrl(url = '') {
+  const s = String(url ?? '');
+  return /["'<>&]/.test(s) ? escapeHtml(s) : s;
+}
+
+export function getTemplateMeta(id) {
+  return (
+    DESIGN_TEMPLATES.find((t) => t.id === id) ||
+    DESIGN_TEMPLATES.find((t) => t.id === DEFAULT_TEMPLATE_ID) ||
+    DESIGN_TEMPLATES[0]
+  );
+}
+
+/** 한 활동의 사진 목록: 작품 사진 → 활동 사진 순서, 대표 사진은 맨 앞 */
+export function getWorkPhotos(work) {
+  const art = Array.isArray(work?.images) ? work.images : [];
+  const activity = Array.isArray(work?.activityPhotos) ? work.activityPhotos : [];
+  const list = [
+    ...art.map((p) => ({ ...p, bucket: 'images', kind: 'art' })),
+    ...activity.map((p) => ({ ...p, bucket: 'activityPhotos', kind: 'activity' }))
+  ];
+  const coverIdx = work?.coverPhotoId ? list.findIndex((p) => p.id === work.coverPhotoId) : -1;
+  if (coverIdx > 0) list.unshift(...list.splice(coverIdx, 1));
+  return list;
+}
+
+export function isPdfFile(file) {
+  return /pdf/i.test(file?.mimeType || '') || /\.pdf$/i.test(file?.name || '');
+}
+
+function resolveSrc(item, bucket, assetMap) {
+  return (assetMap && assetMap[bucket] && assetMap[bucket][item.id]) || item.dataUrl || '';
+}
+
+function sortBySchoolYear(works) {
+  const rank = (w) => {
+    const m = SCHOOL_YEAR_MONTHS.indexOf(w.month);
+    const sem = w.semester === '2학기' ? 1 : 0;
+    return m === -1 ? sem * 100 + 50 : m;
+  };
+  return works
+    .map((w, i) => ({ w, i }))
+    .sort((a, b) => rank(a.w) - rank(b.w) || a.i - b.i)
+    .map((x) => x.w);
+}
+
+function renderFigure(photo, src, altFallback, extraCaption = '') {
+  const caption = String(photo.caption || '').trim();
+  const alt = caption || altFallback || '활동 사진';
+  const figcaption =
+    caption || extraCaption
+      ? `<figcaption>${escapeHtml(caption)}${extraCaption ? `<small>${escapeHtml(extraCaption)}</small>` : ''}</figcaption>`
+      : '';
+  return `<figure class="pf-fig" data-kind="${photo.kind === 'activity' ? 'activity' : 'art'}"><img src="${escapeUrl(src)}" alt="${escapeHtml(alt)}" />${figcaption}</figure>`;
+}
+
+// 첨부파일: PDF는 새 창에서 '열어 보기' + 내려받기 버튼, 그 밖의 파일은 '내려받기'
+function renderFileLink(a, href) {
+  const pdf = isPdfFile(a);
+  const name = escapeHtml(a.name || '첨부파일');
+  const ext = pdf ? 'PDF' : escapeHtml(((a.name || '').split('.').pop() || 'FILE').slice(0, 4).toUpperCase());
+  const attrs = pdf
+    ? `href="${escapeUrl(href || '#')}" target="_blank" rel="noopener" data-pf-file="pdf" data-name="${name}"`
+    : `href="${escapeUrl(href || '#')}" download="${name}"`;
+  const size = a.size ? `${escapeHtml(a.size)} · ` : '';
+  return `<li class="pf-file-item"><a class="pf-file${pdf ? ' is-pdf' : ''}" ${attrs}><span class="pf-file-icon">${ext}</span><span class="pf-file-text"><b>${name}</b><small>${size}${
+    pdf ? '열어 보기' : '내려받기'
+  }</small></span></a>${pdf ? `<button type="button" class="pf-file-dl" data-pf-download title="내려받기" aria-label="${name} 내려받기">↓</button>` : ''}</li>`;
+}
+
+function renderWork(work, index, ctx) {
+  const isProject = work.entryType === 'project';
+  const title = String(work.title || '').trim() || '제목 없는 활동';
+  const tag = isProject ? '프로젝트' : String(work.subject || '').trim() || '교과';
+  const when = [work.semester, work.month].filter(Boolean).join(' · ');
+  const photos = getWorkPhotos(work);
+  const attachments = Array.isArray(work.attachments) ? work.attachments : [];
+
+  const meta = [
+    `<span class="pf-tag">${escapeHtml(tag)}</span>`,
+    isProject && work.projectName ? `<span class="pf-project">${escapeHtml(work.projectName)}</span>` : '',
+    !isProject && work.activityType ? `<span class="pf-type">${escapeHtml(work.activityType)}</span>` : '',
+    when ? `<span class="pf-date">${escapeHtml(when)}</span>` : ''
+  ].join('');
+
+  const roles = [
+    isProject && work.projectRole ? `<span>맡은 역할 <b>${escapeHtml(work.projectRole)}</b></span>` : '',
+    isProject && work.linkedSubjects ? `<span>함께한 과목 <b>${escapeHtml(work.linkedSubjects)}</b></span>` : ''
+  ].join('');
+
+  const media = photos.length
+    ? `<div class="pf-media${photos.length === 1 ? ' is-single' : ''}">${photos
+        .map((p) => renderFigure(p, resolveSrc(p, p.bucket, ctx.assetMap), title))
+        .join('')}</div>`
+    : '';
+
+  const content = String(work.content || '').trim();
+  const reflection = String(work.reflection || '').trim();
+  const files = attachments.length
+    ? `<ul class="pf-files">${attachments.map((a) => renderFileLink(a, resolveSrc(a, 'attachments', ctx.assetMap))).join('')}</ul>`
+    : '';
+
+  const text =
+    content || reflection || files
+      ? `<div class="pf-text">${content ? `<p class="pf-content">${escapeHtml(content)}</p>` : ''}${
+          reflection
+            ? `<div class="pf-reflection"><strong>배우고 느낀 점</strong><p>${escapeHtml(reflection)}</p></div>`
+            : ''
+        }${files}</div>`
+      : '';
+
+  const classes = ['pf-work', photos.length ? 'has-media' : 'no-media', ctx.markFirst && index === 0 ? 'is-current' : '']
+    .filter(Boolean)
+    .join(' ');
+
+  return `<article class="${classes}" data-kind="${isProject ? 'project' : 'subject'}">
+<header class="pf-head"><div class="pf-meta">${meta}</div><h2 class="pf-work-title">${escapeHtml(title)}</h2>${
+    roles ? `<p class="pf-role">${roles}</p>` : ''
+  }</header>
+${media}${text}
+</article>`;
+}
+
+function renderFilters(works) {
+  const hasSubject = works.some((w) => w.entryType !== 'project');
+  const hasProject = works.some((w) => w.entryType === 'project');
+  const hasArt = works.some((w) => (w.images || []).length > 0);
+  const hasActivity = works.some((w) => (w.activityPhotos || []).length > 0);
+  const buttons = [['all', '전체']];
+  if (hasSubject && hasProject) buttons.push(['subject', '교과'], ['project', '프로젝트']);
+  if (hasArt) buttons.push(['art', '🎨 작품 모음']);
+  if (hasActivity) buttons.push(['activity', '📸 활동 사진']);
+  if (buttons.length < 2) return '';
+  return `<nav class="pf-filters" aria-label="분류">${buttons
+    .map(
+      ([key, label]) =>
+        `<button type="button" data-pf-filter="${key}"${key === 'all' ? ' class="is-on" aria-pressed="true"' : ' aria-pressed="false"'}>${label}</button>`
+    )
+    .join('')}</nav>`;
+}
+
+function renderAlbum(works, assetMap) {
+  const figures = [];
+  works.forEach((w) => {
+    getWorkPhotos(w).forEach((p) => {
+      figures.push(renderFigure(p, resolveSrc(p, p.bucket, assetMap), w.title, w.title || ''));
+    });
+  });
+  return figures.length ? `<section class="pf-album" aria-label="사진 모아 보기">${figures.join('')}</section>` : '';
+}
+
+/**
+ * 포트폴리오 HTML을 만듭니다.
+ * @param {object} state 포트폴리오 상태
+ * @param {object} options
+ *   assetMap      ZIP 내보내기용: { activityPhotos: {id: path}, images: {...}, attachments: {...} }
+ *   emptyMessage  기록이 하나도 없을 때 보여 줄 안내 문구(앱 미리보기용)
+ */
+export function renderPortfolioHtml(state, options = {}) {
+  const { assetMap = null, emptyMessage = '' } = options;
+  const tpl = getTemplateMeta(state?.selectedTemplate);
+  const p = state?.profile || {};
+  let works = Array.isArray(state?.works) ? state.works : [];
+  if (tpl.id === 'timeline') works = sortBySchoolYear(works);
+  const isShowcase = tpl.id === 'showcase';
+
+  const kicker = [p.academicYear, [p.schoolName, p.gradeClass].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(' · ');
+
+  const cover = `<header class="pf-cover">${kicker ? `<p class="pf-kicker">${escapeHtml(kicker)}</p>` : ''}<h1 class="pf-title">${escapeHtml(
+    p.portfolioTitle || '나의 포트폴리오'
+  )}</h1>${p.subtitle ? `<p class="pf-subtitle">${escapeHtml(p.subtitle)}</p>` : ''}${
+    p.studentName ? `<p class="pf-author">${escapeHtml(p.studentName)}</p>` : ''
+  }${p.introText ? `<p class="pf-intro">${escapeHtml(p.introText)}</p>` : ''}</header>`;
+
+  let body = '';
+  if (works.length) {
+    const slideNav = isShowcase
+      ? `<div class="pf-slide-nav"><button type="button" data-pf-slide="prev" aria-label="이전 기록">←</button><span class="pf-slide-count">1 / ${works.length}</span><button type="button" data-pf-slide="next" aria-label="다음 기록">→</button></div>`
+      : '';
+    body = `${renderFilters(works)}${slideNav}<div class="pf-works">${works
+      .map((w, i) => renderWork(w, i, { assetMap, markFirst: isShowcase }))
+      .join('')}</div>${renderAlbum(works, assetMap)}`;
+  } else if (emptyMessage) {
+    body = `<p class="pf-empty">${escapeHtml(emptyMessage)}</p>`;
+  }
+
+  return `<div class="pf-wrap"><div class="pf pf-t-${tpl.id}" data-filter="all">${cover}${body}</div></div>`;
+}
+
+/* =====================================================================
+   시안 9종 CSS
+   ===================================================================== */
 export function getPortfolioTemplatesCss() {
   return `
-/* =========================================================
-   Student Portfolio 9 Templates (incl. 3 Magazine Books)
-   ========================================================= */
-.pf-root {
+/* ---------- 공통 뼈대 ---------- */
+.pf-wrap { container-type: inline-size; }
+.pf {
+  --pf-bg: #FFFFFF; --pf-text: #1F2937; --pf-muted: #6B7280; --pf-accent: #2563EB; --pf-on-accent: #FFFFFF;
+  --pf-line: #E5E7EB; --pf-soft: #F3F4F6; --pf-card: #FFFFFF;
+  --pf-title-font: 'Noto Sans KR', 'Pretendard', system-ui, sans-serif;
+  --pf-radius: 16px;
+  --pf-pad: clamp(20px, 5cqi, 48px);
+  background: var(--pf-bg);
+  color: var(--pf-text);
   font-family: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  line-height: 1.65;
+  font-size: 15px;
+  line-height: 1.7;
   word-break: keep-all;
-  box-sizing: border-box;
-  width: 100%;
+  overflow-wrap: anywhere;
+  padding: var(--pf-pad);
+  border-radius: var(--pf-radius);
 }
-.pf-root *, .pf-root *::before, .pf-root *::after {
-  box-sizing: border-box;
+.pf *, .pf *::before, .pf *::after { box-sizing: border-box; }
+.pf h1, .pf h2, .pf p, .pf figure, .pf ul { margin: 0; }
+.pf img { display: block; max-width: 100%; }
+
+.pf-cover { margin-bottom: 28px; }
+.pf-kicker { font-size: 13px; font-weight: 600; color: var(--pf-muted); letter-spacing: 0.02em; }
+.pf-title { font-family: var(--pf-title-font); font-size: clamp(26px, 5cqi, 44px); line-height: 1.25; font-weight: 800; letter-spacing: -0.01em; margin: 8px 0 6px; }
+.pf-subtitle { font-size: 16px; color: var(--pf-muted); }
+.pf-author { margin-top: 14px; font-weight: 700; }
+.pf-intro { margin-top: 10px; max-width: 68ch; white-space: pre-line; }
+.pf-empty { padding: 40px 16px; text-align: center; color: var(--pf-muted); border: 1px dashed var(--pf-line); border-radius: 12px; }
+
+.pf-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.pf-filters button {
+  font: inherit; font-size: 14px; font-weight: 600; line-height: 1.4;
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--pf-line); background: transparent; color: inherit;
+}
+.pf-filters button.is-on { background: var(--pf-accent); border-color: var(--pf-accent); color: var(--pf-on-accent); }
+
+.pf-works { display: grid; gap: 28px; }
+.pf-work { display: grid; grid-template-areas: "head" "media" "text"; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; min-width: 0; }
+.pf-head { grid-area: head; min-width: 0; }
+.pf-media { grid-area: media; min-width: 0; }
+.pf-text { grid-area: text; min-width: 0; }
+
+.pf-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; color: var(--pf-muted); }
+.pf-tag { display: inline-block; padding: 1px 10px; border-radius: 999px; background: var(--pf-accent); color: var(--pf-on-accent); font-weight: 700; font-size: 12.5px; }
+.pf-project { font-weight: 700; color: var(--pf-text); }
+.pf-work-title { font-family: var(--pf-title-font); font-size: clamp(19px, 3cqi, 24px); line-height: 1.4; font-weight: 800; margin-top: 6px; }
+.pf-role { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 13.5px; color: var(--pf-muted); }
+.pf-role b { color: var(--pf-text); font-weight: 600; }
+
+.pf-content { white-space: pre-line; }
+.pf-reflection { margin-top: 14px; padding: 12px 16px; border-left: 3px solid var(--pf-accent); background: var(--pf-soft); border-radius: 0 10px 10px 0; font-size: 14.5px; }
+.pf-reflection strong { display: block; font-size: 12.5px; color: var(--pf-accent); margin-bottom: 2px; }
+.pf-reflection p { white-space: pre-line; }
+.pf-files { list-style: none; padding: 0; margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 8px; }
+.pf-file-item { position: relative; display: flex; min-width: 0; }
+.pf-file { flex: 1; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--pf-line); border-radius: 12px; color: inherit; text-decoration: none; background: var(--pf-card); min-width: 0; }
+.pf-file.is-pdf { padding-right: 48px; }
+.pf-file-dl { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--pf-line); background: var(--pf-soft); color: inherit; font: inherit; font-weight: 800; cursor: pointer; }
+.pf-file-dl:hover { border-color: var(--pf-accent); }
+.pf-file:hover { border-color: var(--pf-accent); }
+.pf-file-icon { flex-shrink: 0; display: grid; place-items: center; width: 40px; height: 46px; border-radius: 6px; background: #64748B; color: #FFFFFF; font-size: 11px; font-weight: 800; letter-spacing: 0.02em; }
+.pf-file.is-pdf .pf-file-icon { background: #E5484D; }
+.pf-file-text { display: grid; min-width: 0; line-height: 1.4; }
+.pf-file-text b { font-size: 13.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-file-text small { font-size: 12px; color: var(--pf-muted); }
+
+.pf-media { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.pf-media.is-single { grid-template-columns: minmax(0, 1fr); }
+.pf-fig { position: relative; }
+.pf-fig::before { position: absolute; top: 8px; left: 8px; z-index: 1; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: #334155; font-size: 11.5px; font-weight: 700; line-height: 1.6; pointer-events: none; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.pf-fig[data-kind="art"]::before { content: "🎨 작품"; }
+.pf-fig[data-kind="activity"]::before { content: "📸 활동"; }
+.pf-fig img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; cursor: zoom-in; background: var(--pf-soft); }
+.pf-media.is-single .pf-fig img { aspect-ratio: auto; max-height: 480px; object-fit: contain; }
+.pf-fig figcaption { margin-top: 6px; font-size: 13px; color: var(--pf-muted); line-height: 1.5; }
+.pf-fig figcaption small { display: block; opacity: 0.8; }
+
+/* 분류 버튼 */
+.pf[data-filter="subject"] .pf-work[data-kind="project"],
+.pf[data-filter="project"] .pf-work[data-kind="subject"] { display: none; }
+.pf-album { display: none; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 18px; }
+.pf[data-filter="art"] .pf-album, .pf[data-filter="activity"] .pf-album { display: grid; }
+.pf[data-filter="art"] .pf-album .pf-fig[data-kind="activity"],
+.pf[data-filter="activity"] .pf-album .pf-fig[data-kind="art"] { display: none; }
+.pf[data-filter="art"] .pf-works, .pf[data-filter="activity"] .pf-works,
+.pf[data-filter="art"] .pf-slide-nav, .pf[data-filter="activity"] .pf-slide-nav { display: none; }
+
+/* 슬라이드(시안 6) */
+.pf-slide-nav { display: none; }
+.pf-slide-nav button { font: inherit; font-size: 18px; font-weight: 700; width: 44px; height: 40px; border-radius: 10px; border: 1px solid var(--pf-line); background: var(--pf-soft); color: inherit; cursor: pointer; }
+.pf-slide-count { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 4em; text-align: center; }
+
+/* 사진 크게 보기 */
+.pf-lightbox { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: rgba(15, 23, 42, 0.88); cursor: zoom-out; }
+.pf-lightbox img { max-width: 100%; max-height: 80vh; border-radius: 10px; background: #FFF; }
+.pf-lightbox p { color: #F8FAFC; font-size: 15px; text-align: center; margin: 0; }
+.pf-lightbox-close { font: inherit; font-size: 14px; font-weight: 700; padding: 8px 16px; border-radius: 999px; border: 0; background: #FFF; color: #0F172A; cursor: pointer; }
+
+/* ---------- 1. 신문 칼럼 ---------- */
+.pf-t-editorial { --pf-bg: #FAF7F2; --pf-text: #1C1917; --pf-muted: #78716C; --pf-accent: #C85A32; --pf-line: #D6CFC5; --pf-soft: #F2ECE1; --pf-title-font: 'Nanum Myeongjo', Georgia, serif; }
+.pf-t-editorial .pf-cover { border-bottom: 3px double var(--pf-text); padding-bottom: 22px; }
+.pf-t-editorial .pf-works { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 36px; }
+.pf-t-editorial .pf-work { border-top: 1px solid var(--pf-line); padding-top: 18px; }
+.pf-t-editorial .pf-work:first-child { grid-column: 1 / -1; border-top: 0; padding-top: 0; }
+.pf-t-editorial .pf-work:first-child.has-media { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); grid-template-areas: "head head" "media text"; column-gap: 28px; }
+.pf-t-editorial .pf-work:first-child .pf-work-title { font-size: clamp(22px, 4cqi, 32px); }
+.pf-t-editorial .pf-tag { background: none; color: var(--pf-accent); padding: 0; border-radius: 0; letter-spacing: 0.06em; }
+
+/* ---------- 2. 미니멀 갤러리 ---------- */
+.pf-t-gallery { --pf-bg: #FFFFFF; --pf-text: #111827; --pf-muted: #6B7280; --pf-accent: #3D6B58; --pf-line: #E5E7EB; --pf-soft: #F3F4F6; }
+.pf-t-gallery .pf-cover { text-align: center; padding-top: 8px; }
+.pf-t-gallery .pf-title { font-weight: 300; }
+.pf-t-gallery .pf-intro { margin-inline: auto; }
+.pf-t-gallery .pf-filters { justify-content: center; }
+.pf-t-gallery .pf-works { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 40px 24px; }
+.pf-t-gallery .pf-work { grid-template-areas: "media" "head" "text"; gap: 10px; }
+.pf-t-gallery .pf-media { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pf-t-gallery .pf-media .pf-fig:first-child { grid-column: 1 / -1; }
+.pf-t-gallery .pf-media.is-single { grid-template-columns: minmax(0, 1fr); }
+.pf-t-gallery .pf-fig img { border-radius: 4px; }
+.pf-t-gallery .pf-tag { background: none; color: var(--pf-accent); padding: 0; }
+.pf-t-gallery .pf-work-title { font-size: 18px; font-weight: 700; }
+.pf-t-gallery .pf-reflection { border-left: 0; border-radius: 8px; }
+
+/* ---------- 3. 성장 타임라인 ---------- */
+.pf-t-timeline { --pf-bg: #F4F1EA; --pf-text: #1B2A4A; --pf-muted: #64748B; --pf-accent: #D97706; --pf-line: #CBD5E1; --pf-soft: #FFFBEB; }
+.pf-t-timeline .pf-cover { background: #1B2A4A; color: #FFFFFF; margin: calc(var(--pf-pad) * -1) calc(var(--pf-pad) * -1) 28px; padding: max(var(--pf-pad), 24px); border-radius: var(--pf-radius) var(--pf-radius) 0 0; }
+.pf-t-timeline .pf-kicker, .pf-t-timeline .pf-subtitle { color: #FCD34D; }
+.pf-t-timeline .pf-works { border-left: 3px solid var(--pf-accent); padding-left: 26px; margin-left: 8px; gap: 22px; }
+.pf-t-timeline .pf-work { position: relative; background: #FFFFFF; border-radius: 14px; padding: 20px; }
+.pf-t-timeline .pf-work::before { content: ''; position: absolute; left: -36px; top: 24px; width: 16px; height: 16px; border-radius: 50%; background: var(--pf-accent); border: 3px solid var(--pf-bg); }
+.pf-t-timeline .pf-date { order: -1; font-weight: 800; font-size: 14px; color: var(--pf-accent); }
+.pf-t-timeline .pf-tag { background: #1B2A4A; }
+
+/* ---------- 4. 탐구 보고서 ---------- */
+.pf-t-academic { --pf-bg: #FFFFFF; --pf-text: #0F172A; --pf-muted: #64748B; --pf-accent: #1E3A5F; --pf-line: #CBD5E1; --pf-soft: #F1F5F9; counter-reset: pf-work; }
+.pf-t-academic .pf-cover { border-left: 6px solid var(--pf-accent); padding-left: 18px; }
+.pf-t-academic .pf-works { gap: 20px; }
+.pf-t-academic .pf-work { counter-increment: pf-work; border: 1px solid var(--pf-line); border-radius: 12px; padding: 20px; }
+.pf-t-academic .pf-work-title::before { content: counter(pf-work, decimal-leading-zero) ". "; color: var(--pf-accent); }
+.pf-t-academic .pf-tag { border-radius: 4px; }
+.pf-t-academic .pf-text { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pf-t-academic .pf-content, .pf-t-academic .pf-reflection { margin: 0; padding: 14px; border-radius: 10px; font-size: 14px; }
+.pf-t-academic .pf-content { background: var(--pf-soft); }
+.pf-t-academic .pf-content::before { content: "활동 내용"; display: block; font-size: 12.5px; font-weight: 700; color: var(--pf-accent); margin-bottom: 2px; }
+.pf-t-academic .pf-reflection { border-left: 0; background: #EFF6FF; }
+.pf-t-academic .pf-files { grid-column: 1 / -1; margin-top: 0; }
+
+/* ---------- 5. 스크랩북 ---------- */
+.pf-t-scrapbook { --pf-bg: #FFFDF7; --pf-text: #3E2723; --pf-muted: #8D6E63; --pf-accent: #E06D53; --pf-line: #E6DEC8; --pf-soft: #FFF4D6; background-image: radial-gradient(#E0D6CC 1.2px, transparent 1.2px); background-size: 20px 20px; }
+.pf-t-scrapbook .pf-cover { background: #FFFFFF; border: 1px solid var(--pf-line); border-radius: 16px; padding: 24px; text-align: center; }
+.pf-t-scrapbook .pf-intro { margin-inline: auto; }
+.pf-t-scrapbook .pf-filters { justify-content: center; }
+.pf-t-scrapbook .pf-works { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.pf-t-scrapbook .pf-work { background: #FFFFFF; border: 1px solid var(--pf-line); border-radius: 14px; padding: 20px; box-shadow: 0 6px 16px rgba(62, 39, 35, 0.06); transform: rotate(-0.4deg); }
+.pf-t-scrapbook .pf-work:nth-child(even) { transform: rotate(0.4deg); }
+.pf-t-scrapbook .pf-fig { background: #FFFFFF; padding: 8px 8px 10px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1); }
+.pf-t-scrapbook .pf-fig img { border-radius: 2px; }
+.pf-t-scrapbook .pf-reflection { border-left: 0; border-radius: 4px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06); }
+
+/* ---------- 6. 발표 슬라이드 ---------- */
+.pf-t-showcase { --pf-bg: #18181B; --pf-text: #F4F4F5; --pf-muted: #A1A1AA; --pf-accent: #14B8A6; --pf-on-accent: #042F2E; --pf-line: #3F3F46; --pf-soft: #27272A; --pf-card: #27272A; }
+.pf-t-showcase .pf-slide-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 16px; }
+.pf-t-showcase .pf-work { display: none; }
+.pf-t-showcase .pf-work.is-current { display: grid; background: var(--pf-soft); border-radius: 16px; padding: clamp(18px, 4cqi, 32px); }
+.pf-t-showcase .pf-reflection { background: #18181B; }
+.pf-t-showcase .pf-filters { justify-content: center; }
+
+/* ---------- 7. 포토 매거진 ---------- */
+.pf-t-mag-life { --pf-bg: #F6F5F0; --pf-text: #262A24; --pf-muted: #78716C; --pf-accent: #4A5D4E; --pf-line: #D8D4C8; --pf-soft: #ECEAE2; --pf-title-font: 'Nanum Myeongjo', Georgia, serif; }
+.pf-t-mag-life .pf-cover { text-align: center; border-bottom: 1px solid var(--pf-line); padding-bottom: 28px; }
+.pf-t-mag-life .pf-intro { margin-inline: auto; }
+.pf-t-mag-life .pf-filters { justify-content: center; }
+.pf-t-mag-life .pf-works { gap: 56px; }
+.pf-t-mag-life .pf-work { grid-template-areas: "media" "head" "text"; gap: 16px; }
+.pf-t-mag-life .pf-media .pf-fig:first-child { grid-column: 1 / -1; }
+.pf-t-mag-life .pf-media .pf-fig:first-child img { aspect-ratio: 16 / 9; }
+.pf-t-mag-life .pf-media.is-single .pf-fig img { aspect-ratio: auto; }
+.pf-t-mag-life .pf-tag { background: none; color: var(--pf-accent); padding: 0; letter-spacing: 0.1em; }
+.pf-t-mag-life .pf-work-title { font-size: clamp(22px, 3.6cqi, 30px); }
+.pf-t-mag-life .pf-text { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.pf-t-mag-life .pf-reflection { margin-top: 0; }
+.pf-t-mag-life .pf-files { grid-column: 1 / -1; margin-top: 0; }
+
+/* ---------- 8. 팝 아트진 ---------- */
+.pf-t-mag-zine { --pf-bg: #FCFBF7; --pf-text: #111111; --pf-muted: #3F3F46; --pf-accent: #EA580C; --pf-line: #111111; --pf-soft: #FEF3C7; }
+.pf-t-mag-zine .pf-cover { background: #FACC15; border: 2px solid #111111; box-shadow: 5px 5px 0 #111111; border-radius: 14px; padding: 24px; }
+.pf-t-mag-zine .pf-kicker, .pf-t-mag-zine .pf-subtitle { color: #111111; font-weight: 700; }
+.pf-t-mag-zine .pf-title, .pf-t-mag-zine .pf-work-title { font-weight: 900; letter-spacing: -0.03em; }
+.pf-t-mag-zine .pf-filters button { border: 2px solid #111111; font-weight: 800; }
+.pf-t-mag-zine .pf-filters button.is-on { background: #111111; border-color: #111111; color: #FFFFFF; }
+.pf-t-mag-zine .pf-works { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.pf-t-mag-zine .pf-work { background: #FFFFFF; border: 2px solid #111111; box-shadow: 5px 5px 0 #111111; border-radius: 14px; padding: 20px; }
+.pf-t-mag-zine .pf-work[data-kind="project"] { background: #FFF7ED; }
+.pf-t-mag-zine .pf-tag { background: #111111; color: #FFFFFF; border-radius: 4px; }
+.pf-t-mag-zine .pf-work[data-kind="project"] .pf-tag { background: var(--pf-accent); }
+.pf-t-mag-zine .pf-fig img { border: 2px solid #111111; border-radius: 8px; }
+.pf-t-mag-zine .pf-reflection { border: 2px solid #111111; border-radius: 10px; font-weight: 600; }
+.pf-t-mag-zine .pf-reflection strong { color: #111111; }
+
+/* ---------- 9. 책 펼침면 ---------- */
+.pf-t-mag-book { --pf-bg: #F7F3E8; --pf-text: #231F20; --pf-muted: #78716C; --pf-accent: #6B1D2F; --pf-line: #C8B9A6; --pf-soft: #EFE9D8; --pf-title-font: 'Nanum Myeongjo', Georgia, serif; }
+.pf-t-mag-book .pf-cover { text-align: center; border-bottom: 2px solid var(--pf-accent); padding-bottom: 22px; }
+.pf-t-mag-book .pf-intro { margin-inline: auto; }
+.pf-t-mag-book .pf-filters { justify-content: center; }
+.pf-t-mag-book .pf-work { background: #FBF8F0; border: 1px solid var(--pf-line); border-radius: 10px; padding: clamp(18px, 3.5cqi, 32px); box-shadow: 0 8px 20px rgba(35, 31, 32, 0.06); }
+.pf-t-mag-book .pf-work.has-media { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "head media" "text media"; column-gap: 0; }
+.pf-t-mag-book .pf-work.has-media .pf-head, .pf-t-mag-book .pf-work.has-media .pf-text { padding-right: clamp(16px, 3cqi, 32px); }
+.pf-t-mag-book .pf-work.has-media .pf-media { border-left: 1px solid var(--pf-line); padding-left: clamp(16px, 3cqi, 32px); grid-template-columns: minmax(0, 1fr); align-content: start; }
+.pf-t-mag-book .pf-tag { background: none; color: var(--pf-accent); padding: 0; letter-spacing: 0.06em; }
+.pf-t-mag-book .pf-content::first-letter { float: left; font-family: var(--pf-title-font); font-size: 2.8em; line-height: 1; font-weight: 800; color: var(--pf-accent); margin: 4px 8px 0 0; }
+.pf-t-mag-book .pf-reflection { background: rgba(107, 29, 47, 0.07); }
+
+/* ---------- 10. 말랑 파스텔 (귀여운) ---------- */
+.pf-t-pastel { --pf-bg: #FFF4F7; --pf-text: #4A3B52; --pf-muted: #8E7F96; --pf-accent: #FF7EA8; --pf-line: #FFD6E3; --pf-soft: #F3EEFF; --pf-title-font: 'Jua', 'Noto Sans KR', sans-serif; --pf-radius: 28px;
+  background-image: radial-gradient(circle at 8% 6%, #FFE1EC 0 90px, transparent 91px), radial-gradient(circle at 96% 18%, #E2F7F1 0 70px, transparent 71px), radial-gradient(circle at 90% 96%, #EEE8FF 0 110px, transparent 111px); }
+.pf-t-pastel .pf-cover { text-align: center; background: #FFFFFF; border-radius: 28px; padding: 28px 20px; box-shadow: 0 8px 0 #FFD6E3; }
+.pf-t-pastel .pf-cover::before { content: "🌷 ⭐ 🌈"; display: block; font-size: 22px; letter-spacing: 6px; margin-bottom: 4px; }
+.pf-t-pastel .pf-title { font-weight: 400; color: #FF5C93; }
+.pf-t-pastel .pf-intro { margin-inline: auto; }
+.pf-t-pastel .pf-author::before { content: "✏️ "; }
+.pf-t-pastel .pf-filters { justify-content: center; }
+.pf-t-pastel .pf-filters button { border: 2px solid #FFD6E3; background: #FFFFFF; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 15px; }
+.pf-t-pastel .pf-filters button.is-on { background: #FF7EA8; border-color: #FF7EA8; }
+.pf-t-pastel .pf-works { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.pf-t-pastel .pf-work { background: #FFFFFF; border-radius: 26px; padding: 22px; border: 3px solid #FFD6E3; box-shadow: 0 6px 0 #FFD6E3; }
+.pf-t-pastel .pf-work:nth-child(3n+2) { border-color: #BFEDE0; box-shadow: 0 6px 0 #BFEDE0; }
+.pf-t-pastel .pf-work:nth-child(3n+3) { border-color: #DCD3FF; box-shadow: 0 6px 0 #DCD3FF; }
+.pf-t-pastel .pf-tag { font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; padding: 2px 12px; }
+.pf-t-pastel .pf-work[data-kind="subject"] .pf-tag::before { content: "📚 "; }
+.pf-t-pastel .pf-work[data-kind="project"] .pf-tag { background: #4FC3A1; }
+.pf-t-pastel .pf-work[data-kind="project"] .pf-tag::before { content: "🚀 "; }
+.pf-t-pastel .pf-work-title { font-weight: 400; font-size: clamp(20px, 3.2cqi, 25px); }
+.pf-t-pastel .pf-fig img { border-radius: 18px; border: 4px solid #FFFFFF; box-shadow: 0 3px 10px rgba(255, 126, 168, 0.25); }
+.pf-t-pastel .pf-reflection { position: relative; margin-top: 18px; border-left: 0; border-radius: 20px; background: #F3EEFF; padding: 14px 18px; }
+.pf-t-pastel .pf-reflection::before { content: ""; position: absolute; top: -10px; left: 28px; border: 10px solid transparent; border-top: 0; border-bottom-color: #F3EEFF; }
+.pf-t-pastel .pf-reflection strong { font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; color: #8A6CF0; }
+.pf-t-pastel .pf-reflection strong::before { content: "💬 "; }
+
+/* ---------- 11. 크레파스 그림일기 (귀여운) ---------- */
+.pf-t-crayon { --pf-bg: #FFFDF2; --pf-text: #3B3A36; --pf-muted: #7A776E; --pf-accent: #FF6B6B; --pf-line: #3B3A36; --pf-soft: #FFF4C7; --pf-title-font: 'Gaegu', 'Noto Sans KR', sans-serif;
+  --hand: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  background-image: repeating-linear-gradient(transparent 0 31px, #E9E4CF 31px 32px); }
+.pf-t-crayon .pf-cover { text-align: center; padding: 24px 16px; border: 3px solid #3B3A36; border-radius: var(--hand); background: #FFFFFF; }
+.pf-t-crayon .pf-cover::before { content: "☀️ 나의 그림일기 ☀️"; display: block; font-family: 'Gaegu', sans-serif; font-weight: 700; font-size: 18px; color: #FF9F1C; }
+.pf-t-crayon .pf-title { font-weight: 700; font-size: clamp(30px, 6cqi, 48px); text-decoration: underline wavy #FF6B6B 3px; text-underline-offset: 8px; }
+.pf-t-crayon .pf-subtitle, .pf-t-crayon .pf-intro, .pf-t-crayon .pf-author { font-family: 'Gaegu', sans-serif; font-size: 19px; }
+.pf-t-crayon .pf-intro { margin-inline: auto; }
+.pf-t-crayon .pf-filters { justify-content: center; }
+.pf-t-crayon .pf-filters button { border: 2px solid #3B3A36; border-radius: var(--hand); font-family: 'Gaegu', sans-serif; font-size: 17px; font-weight: 700; background: #FFFFFF; }
+.pf-t-crayon .pf-filters button.is-on { background: #FFD43B; border-color: #3B3A36; color: #3B3A36; }
+.pf-t-crayon .pf-works { gap: 30px; }
+.pf-t-crayon .pf-work { background: #FFFFFF; border: 3px solid #3B3A36; border-radius: var(--hand); padding: 22px 24px; }
+.pf-t-crayon .pf-work.has-media { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "head head" "media text"; column-gap: 22px; }
+.pf-t-crayon .pf-meta { font-family: 'Gaegu', sans-serif; font-size: 17px; color: #3B3A36; }
+.pf-t-crayon .pf-date { order: -1; font-weight: 700; }
+.pf-t-crayon .pf-date::after { content: " 🌤️"; }
+.pf-t-crayon .pf-tag { background: none; color: #3B3A36; border: 2px solid #3B3A36; border-radius: var(--hand); font-family: 'Gaegu', sans-serif; font-size: 16px; }
+.pf-t-crayon .pf-work:nth-child(4n+1) .pf-tag { background: #FFD6D6; }
+.pf-t-crayon .pf-work:nth-child(4n+2) .pf-tag { background: #D3F9D8; }
+.pf-t-crayon .pf-work:nth-child(4n+3) .pf-tag { background: #D0EBFF; }
+.pf-t-crayon .pf-work:nth-child(4n+4) .pf-tag { background: #FFF3BF; }
+.pf-t-crayon .pf-work-title { font-weight: 700; font-size: clamp(24px, 4cqi, 30px); }
+.pf-t-crayon .pf-fig img { border: 3px solid #3B3A36; border-radius: var(--hand); }
+.pf-t-crayon .pf-fig::before { border: 2px solid #3B3A36; box-shadow: none; }
+.pf-t-crayon .pf-content { font-size: 15.5px; line-height: 32px; }
+.pf-t-crayon .pf-reflection { border: 2px dashed #FF6B6B; border-radius: 14px; background: #FFF8F0; font-family: 'Gaegu', sans-serif; font-size: 19px; line-height: 1.5; }
+.pf-t-crayon .pf-reflection strong { font-size: 16px; color: #FF6B6B; }
+.pf-t-crayon .pf-file { border: 2px solid #3B3A36; }
+
+/* ---------- 12. 알록달록 무지개 (귀여운) ---------- */
+.pf-t-rainbow { --pf-bg: #FFFFFF; --pf-text: #2F3A4A; --pf-muted: #6B7686; --pf-accent: #7C6CF2; --pf-line: #E9E5FF; --pf-soft: #F6F4FF; --pf-title-font: 'Jua', 'Noto Sans KR', sans-serif; --pf-radius: 26px; }
+.pf-t-rainbow .pf-cover { text-align: center; padding: 30px 20px 24px; border-radius: 24px; background: #FFFDF5; border: 3px solid #FFE8A3; position: relative; overflow: hidden; }
+.pf-t-rainbow .pf-cover::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 10px; background: linear-gradient(90deg, #FF8A8A, #FFB86B, #FFE26B, #7FDB9A, #6BC4FF, #A98BFF); }
+.pf-t-rainbow .pf-cover::after { content: "🌈"; position: absolute; right: 16px; top: 18px; font-size: 34px; }
+.pf-t-rainbow .pf-title { font-weight: 400; font-size: clamp(28px, 5.5cqi, 46px); }
+.pf-t-rainbow .pf-intro { margin-inline: auto; }
+.pf-t-rainbow .pf-filters { justify-content: center; }
+.pf-t-rainbow .pf-filters button { font-family: 'Jua', sans-serif; font-weight: 400; font-size: 15px; border: 2px solid #E9E5FF; }
+.pf-t-rainbow .pf-works { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.pf-t-rainbow .pf-work { --c: #FF8A8A; --c-soft: #FFF0F0; background: var(--c-soft); border-radius: 24px; padding: 20px; border-top: 10px solid var(--c); }
+.pf-t-rainbow .pf-work:nth-child(6n+2) { --c: #FFB86B; --c-soft: #FFF5EA; }
+.pf-t-rainbow .pf-work:nth-child(6n+3) { --c: #F5C800; --c-soft: #FFFBE5; }
+.pf-t-rainbow .pf-work:nth-child(6n+4) { --c: #4CC77A; --c-soft: #EDFBF2; }
+.pf-t-rainbow .pf-work:nth-child(6n+5) { --c: #4AAEF0; --c-soft: #EBF6FF; }
+.pf-t-rainbow .pf-work:nth-child(6n+6) { --c: #A98BFF; --c-soft: #F4F0FF; }
+.pf-t-rainbow .pf-tag { background: var(--c); font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; }
+.pf-t-rainbow .pf-work-title { font-weight: 400; font-size: clamp(20px, 3.2cqi, 25px); }
+.pf-t-rainbow .pf-fig img { border-radius: 16px; }
+.pf-t-rainbow .pf-reflection { border-left: 0; border-radius: 16px; background: #FFFFFF; border: 2px solid var(--c); }
+.pf-t-rainbow .pf-reflection strong { color: var(--pf-text); }
+.pf-t-rainbow .pf-reflection strong::before { content: "⭐ "; }
+.pf-t-rainbow .pf-file { background: #FFFFFF; }
+
+/* ---------- 2단 배치에서 마지막 카드가 혼자 남으면 가로 전체 사용 ---------- */
+.pf-t-pastel .pf-work:last-child:nth-child(odd),
+.pf-t-rainbow .pf-work:last-child:nth-child(odd),
+.pf-t-scrapbook .pf-work:last-child:nth-child(odd),
+.pf-t-mag-zine .pf-work:last-child:nth-child(odd),
+.pf-t-editorial .pf-work:last-child:nth-child(even) { grid-column: 1 / -1; }
+
+/* ---------- 휴대폰처럼 좁은 화면: 모두 한 줄로 ---------- */
+@container (max-width: 640px) {
+  .pf .pf-works { grid-template-columns: minmax(0, 1fr) !important; }
+  .pf .pf-work, .pf .pf-work.has-media, .pf .pf-work:first-child.has-media { grid-template-columns: minmax(0, 1fr) !important; grid-template-areas: "head" "media" "text" !important; }
+  .pf-t-gallery .pf-work, .pf-t-mag-life .pf-work { grid-template-areas: "media" "head" "text" !important; }
+  .pf .pf-text { grid-template-columns: minmax(0, 1fr) !important; }
+  .pf-t-mag-book .pf-work.has-media .pf-head, .pf-t-mag-book .pf-work.has-media .pf-text { padding-right: 0; }
+  .pf-t-mag-book .pf-work.has-media .pf-media { border-left: 0; padding-left: 0; }
+  .pf-t-scrapbook .pf-work { transform: none !important; }
+  .pf-t-rainbow .pf-cover { padding-top: 56px; }
+  .pf-t-rainbow .pf-cover::after { top: 18px; right: 50%; transform: translateX(50%); font-size: 28px; }
+  .pf-t-timeline .pf-works { padding-left: 18px; margin-left: 4px; }
+  .pf-t-timeline .pf-work::before { left: -28px; }
 }
 
-.pf-filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.pf-filter-btn {
-  border: 1px solid rgba(0,0,0,0.14);
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-.pf-filter-btn:hover {
-  transform: translateY(-1px);
-}
-
-.pf-img-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin: 14px 0;
-}
-.pf-img-card {
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid rgba(0,0,0,0.12);
-  background: rgba(255,255,255,0.85);
-}
-.pf-img-card.activity-photo-card {
-  border: 2px solid rgba(16, 185, 129, 0.45);
-  background: #F0FDF4;
-}
-.pf-img-tag-bar {
-  padding: 5px 10px;
-  font-size: 11.5px;
-  font-weight: 800;
-  color: #FFFFFF;
-  display: flex;
-  justify-content: space-between;
-}
-.pf-img-card img {
-  width: 100%;
-  max-height: 260px;
-  object-fit: cover;
-  display: block;
-  cursor: zoom-in;
-}
-.pf-img-caption {
-  padding: 7px 10px;
-  font-size: 12px;
-  color: #334155;
-  text-align: center;
-  font-weight: 600;
-}
-.pf-att-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-.pf-att-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  border: 1px solid rgba(0,0,0,0.14);
-  background: rgba(255,255,255,0.8);
-  color: inherit;
-}
-
-/* ---------------------------------------------------------
-   NEW Magazine Book 1 (시안 7): 포토 에세이 라이프 매거진
-   --------------------------------------------------------- */
-.pf-tpl-mag-life {
-  background: #F6F5F0;
-  color: #262A24;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #D8D4C8;
-  padding: 36px;
-}
-.pf-tpl-mag-life .pf-mag-cover {
-  text-align: center;
-  border-bottom: 1px solid #BDB8A8;
-  padding-bottom: 28px;
-  margin-bottom: 32px;
-}
-.pf-tpl-mag-life .pf-mag-spread {
-  background: #FFFFFF;
-  border: 1px solid #E2DFD5;
-  border-radius: 16px;
-  padding: 28px;
-  margin-bottom: 28px;
-  box-shadow: 0 6px 20px rgba(38, 42, 36, 0.04);
-}
-
-/* ---------------------------------------------------------
-   NEW Magazine Book 2 (시안 8): 팝 컬처 & 아트진 매거진
-   --------------------------------------------------------- */
-.pf-tpl-mag-zine {
-  background: #FCFBF7;
-  color: #111111;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 2px solid #111111;
-  padding: 32px;
-}
-.pf-tpl-mag-zine .pf-zine-box {
-  border: 2px solid #111111;
-  box-shadow: 4px 4px 0px #111111;
-  border-radius: 14px;
-  overflow: hidden;
-  margin-bottom: 26px;
-}
-
-/* ---------------------------------------------------------
-   NEW Magazine Book 3 (시안 9): 클래식 북저널 & 무크지
-   --------------------------------------------------------- */
-.pf-tpl-mag-book {
-  background: #F7F3E8;
-  color: #231F20;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 2px solid #C8B9A6;
-  padding: 36px;
-}
-.pf-tpl-mag-book .pf-book-spread {
-  background: linear-gradient(90deg, #F7F3E8 0%, #EFE9D8 48.5%, #D5C8B0 50%, #EFE9D8 51.5%, #F7F3E8 100%);
-  border: 2px solid #C8B9A6;
-  border-radius: 14px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-bottom: 28px;
-  box-shadow: 0 10px 24px rgba(35, 31, 32, 0.07);
-}
-.pf-tpl-mag-book .pf-book-page-left {
-  padding: 28px;
-  border-right: 1px solid #C8B9A6;
-}
-.pf-tpl-mag-book .pf-book-page-right {
-  padding: 28px;
-}
-
-/* Original 6 Templates */
-.pf-tpl-editorial {
-  background: #FAF7F2;
-  color: #1C1917;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #D6CFC5;
-}
-.pf-tpl-editorial .pf-masthead {
-  padding: 36px 36px 28px;
-  border-bottom: 3px double #1C1917;
-}
-.pf-tpl-editorial .pf-body { padding: 32px 36px; }
-.pf-tpl-editorial .pf-lead-grid {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 28px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid #D6CFC5;
-  margin-bottom: 28px;
-}
-.pf-tpl-editorial .pf-author-box {
-  background: #F2ECE1;
-  border: 1px solid #D6CFC5;
-  border-radius: 12px;
-  padding: 22px;
-  align-self: start;
-}
-.pf-tpl-editorial .pf-article-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 28px;
-}
-.pf-tpl-editorial .pf-article-card {
-  border-bottom: 1px solid #D6CFC5;
-  padding-bottom: 24px;
-}
-.pf-tpl-editorial .pf-reflection {
-  margin-top: 14px;
-  padding: 12px 16px;
-  border-left: 4px solid #C85A32;
-  background: #F2ECE1;
-  border-radius: 0 8px 8px 0;
-  font-size: 13.5px;
-}
-
-.pf-tpl-gallery {
-  background: #F8FAFC;
-  color: #0F172A;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #E2E8F0;
-}
-.pf-tpl-gallery .pf-header {
-  background: #FFFFFF;
-  padding: 40px 32px 28px;
-  text-align: center;
-  border-bottom: 1px solid #E2E8F0;
-}
-.pf-tpl-gallery .pf-grid {
-  padding: 32px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
-}
-.pf-tpl-gallery .pf-card {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  border-radius: 14px;
-  overflow: hidden;
-  padding: 20px;
-}
-
-.pf-tpl-timeline {
-  background: #F4F1EA;
-  color: #1B2A4A;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #CBD5E1;
-}
-.pf-tpl-timeline .pf-header {
-  background: #1B2A4A;
-  color: #FFFFFF;
-  padding: 36px;
-}
-.pf-tpl-timeline .pf-track {
-  margin: 32px 36px;
-  padding-left: 28px;
-  border-left: 4px solid #D97706;
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
-}
-.pf-tpl-timeline .pf-node {
-  position: relative;
-  background: #FFFFFF;
-  border-radius: 16px;
-  padding: 24px;
-  border: 1px solid #E2E8F0;
-}
-
-.pf-tpl-academic {
-  background: #FFFFFF;
-  color: #0F172A;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #CBD5E1;
-}
-.pf-tpl-academic .pf-header {
-  background: #1E3A5F;
-  color: #FFFFFF;
-  padding: 32px 36px;
-}
-.pf-tpl-academic .pf-section-list {
-  padding: 28px 36px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.pf-tpl-scrapbook {
-  background-color: #FFFDF7;
-  background-image: radial-gradient(#D7CCC8 1.25px, transparent 1.25px);
-  background-size: 20px 20px;
-  color: #3E2723;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 2px solid #E6DEC8;
-  padding: 36px;
-}
-.pf-tpl-scrapbook .pf-scrap-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 28px;
-}
-
-.pf-tpl-showcase {
-  background: #18181B;
-  color: #F4F4F5;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #3F3F46;
-}
-
-@media (max-width: 768px) {
-  .pf-tpl-editorial .pf-lead-grid,
-  .pf-tpl-editorial .pf-article-grid,
-  .pf-tpl-scrapbook .pf-scrap-grid,
-  .pf-tpl-mag-book .pf-book-spread {
-    grid-template-columns: 1fr !important;
-  }
-}
-.is-mobile-preview .pf-lead-grid,
-.is-mobile-preview .pf-article-grid,
-.is-mobile-preview .pf-scrap-grid,
-.is-mobile-preview .pf-grid,
-.is-mobile-preview .pf-book-spread {
-  grid-template-columns: 1fr !important;
-}
-
-/* Print Layout */
-.pf-print-wrapper {
-  background: #E2E8F0;
-  padding: 24px;
-  border-radius: 12px;
-}
-.pf-a4-page {
-  background: #FFFFFF;
-  color: #0F172A;
-  max-width: 794px;
-  margin: 0 auto 24px;
-  padding: 44px 48px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
-  border: 1px solid #CBD5E1;
-  border-radius: 6px;
-}
-.pf-print-work-item {
-  break-inside: avoid;
-  page-break-inside: avoid;
-  border: 1px solid #CBD5E1;
-  border-radius: 10px;
-  padding: 18px;
-  margin-bottom: 18px;
-  background: #FFFFFF;
-}
+/* ---------- 인쇄 ---------- */
 @media print {
-  body * { visibility: hidden; }
-  #printable-portfolio-area, #printable-portfolio-area * { visibility: visible; }
-  #printable-portfolio-area {
-    position: absolute; left: 0; top: 0; width: 100%;
-    background: #FFFFFF !important; padding: 0 !important;
-  }
-  .pf-a4-page { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 12mm 14mm !important; max-width: 100% !important; }
+  .pf { --pf-pad: 0px; padding: 0; border-radius: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pf-filters, .pf-slide-nav, .pf-file-dl { display: none !important; }
+  .pf .pf-works { display: grid !important; }
+  .pf .pf-work { display: grid !important; break-inside: avoid; transform: none !important; }
+  .pf .pf-album { display: none !important; }
+  .pf-t-timeline .pf-cover { margin: 0 0 24px; border-radius: 12px; }
+  .pf-t-showcase { --pf-bg: #FFFFFF; --pf-text: #18181B; --pf-muted: #52525B; --pf-soft: #F4F4F5; --pf-line: #D4D4D8; --pf-on-accent: #FFFFFF; --pf-accent: #0F766E; }
+  .pf-t-showcase .pf-reflection { background: #F4F4F5; }
 }
 `;
 }
 
-function renderEntryCategoryBadge(work, accentColor = '#1E3A5F') {
-  if (work.entryType === 'project') {
-    return `
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px;">
-        <span style="background:${accentColor};color:#FFFFFF;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:800;">
-          🚀 프로젝트 · ${escapeHtml(work.projectName || '융합 프로젝트')}
-        </span>
-        ${
-          work.linkedSubjects
-            ? `<span style="background:rgba(0,0,0,0.07);padding:3px 9px;border-radius:6px;font-size:12px;font-weight:700;">${escapeHtml(work.linkedSubjects)}</span>`
-            : ''
-        }
-        ${
-          work.projectRole
-            ? `<span style="font-size:12px;opacity:0.8;">역할: <strong>${escapeHtml(work.projectRole)}</strong></span>`
-            : ''
-        }
-        <span style="font-size:12px;opacity:0.75;">(${escapeHtml(work.semester)} ${escapeHtml(work.month)})</span>
-      </div>
-    `;
-  }
-  return `
-    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px;">
-      <span style="background:${accentColor};color:#FFFFFF;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:800;">
-        📚 ${escapeHtml(work.subject)} 교과
-      </span>
-      <span style="font-size:12px;opacity:0.75;">${escapeHtml(work.semester)} · ${escapeHtml(work.month)} · ${escapeHtml(work.activityType)}</span>
-    </div>
-  `;
-}
+/* =====================================================================
+   PDF(A4 인쇄)용 문서 — 어떤 시안을 골라도 깔끔하게 인쇄되도록 하나의 형식만 씁니다.
+   강조색만 고른 시안을 따라갑니다.
+   ===================================================================== */
+export function renderPrintDocumentHtml(state, { assetMap = null } = {}) {
+  const tpl = getTemplateMeta(state?.selectedTemplate);
+  const accent = tpl.id === 'showcase' ? '#0F766E' : tpl.colors.accent;
+  const p = state?.profile || {};
+  const works = Array.isArray(state?.works) ? state.works : [];
 
-function renderWorkMediaHtml(work, options = {}) {
-  const { assetMap = null } = options;
-  const activityPhotos = Array.isArray(work.activityPhotos) ? work.activityPhotos : [];
-  const images = Array.isArray(work.images) ? work.images : [];
-  const attachments = Array.isArray(work.attachments) ? work.attachments : [];
+  const info = [
+    ['이름', p.studentName],
+    ['학교', p.schoolName],
+    ['학년·반', p.gradeClass],
+    ['학년도', p.academicYear]
+  ]
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`)
+    .join('');
 
-  const activityPhotosHtml = activityPhotos.length
-    ? activityPhotos
-        .map((ap) => {
-          const src =
-            assetMap && assetMap.activityPhotos && assetMap.activityPhotos[ap.id]
-              ? assetMap.activityPhotos[ap.id]
-              : ap.dataUrl;
-          const caption = escapeHtml(ap.caption || ap.name || '');
-          return `
-            <figure class="pf-img-card activity-photo-card" style="margin:0;">
-              <div class="pf-img-tag-bar" style="background:#047857;">
-                <span>📸 학생 활동 사진 (현장 스냅)</span>
-                <span>${escapeHtml(work.semester)} ${escapeHtml(work.month)}</span>
-              </div>
-              <img src="${src}" alt="${caption}" data-lightbox-src="${src}" data-lightbox-caption="${caption}" />
-              ${caption ? `<figcaption class="pf-img-caption">${caption}</figcaption>` : ''}
-            </figure>
-          `;
-        })
-        .join('')
+  const tagOf = (w) => (w.entryType === 'project' ? `프로젝트 · ${w.projectName || ''}` : w.subject || '교과');
+
+  const toc = works.length
+    ? `<div class="pdoc-toc"><h2>차례</h2><ol>${works
+        .map((w) => `<li><span>${escapeHtml(w.title || '제목 없는 활동')}</span><em>${escapeHtml(tagOf(w))}</em></li>`)
+        .join('')}</ol></div>`
     : '';
 
-  const resultImagesHtml = images.length
-    ? images
-        .map((img) => {
-          const src = assetMap && assetMap.images && assetMap.images[img.id] ? assetMap.images[img.id] : img.dataUrl;
-          const caption = escapeHtml(img.caption || img.name || '');
-          return `
-            <figure class="pf-img-card" style="margin:0;">
-              <div class="pf-img-tag-bar" style="background:#334155;">
-                <span>🎨 완성 작품 · 결과물 자료</span>
-                <span>${escapeHtml(work.subject)}</span>
-              </div>
-              <img src="${src}" alt="${caption}" data-lightbox-src="${src}" data-lightbox-caption="${caption}" />
-              ${caption ? `<figcaption class="pf-img-caption">${caption}</figcaption>` : ''}
-            </figure>
-          `;
-        })
-        .join('')
-    : '';
+  const workHtml = works
+    .map((w, i) => {
+      const photos = getWorkPhotos(w);
+      const media = photos.length
+        ? `<div class="pdoc-media${photos.length === 1 ? ' is-single' : ''}">${photos
+            .map((ph) => renderFigure(ph, resolveSrc(ph, ph.bucket, assetMap), w.title))
+            .join('')}</div>`
+        : '';
+      const files = (w.attachments || []).length
+        ? `<p class="pdoc-files">첨부파일: ${w.attachments.map((a) => escapeHtml(a.name)).join(', ')}</p>`
+        : '';
+      const role = [w.projectRole && `맡은 역할: ${w.projectRole}`, w.linkedSubjects && `함께한 과목: ${w.linkedSubjects}`]
+        .filter((x) => w.entryType === 'project' && x)
+        .join(' · ');
+      return `<article class="pdoc-work">
+<header><span class="pdoc-num">${String(i + 1).padStart(2, '0')}</span><div><p class="pdoc-meta">${escapeHtml(tagOf(w))}${
+        w.semester || w.month ? ` · ${escapeHtml([w.semester, w.month].filter(Boolean).join(' '))}` : ''
+      }</p><h2>${escapeHtml(w.title || '제목 없는 활동')}</h2>${role ? `<p class="pdoc-meta">${escapeHtml(role)}</p>` : ''}</div></header>
+${media}${w.content ? `<p class="pdoc-content">${escapeHtml(w.content)}</p>` : ''}${
+        w.reflection ? `<div class="pdoc-reflection"><strong>배우고 느낀 점</strong><p>${escapeHtml(w.reflection)}</p></div>` : ''
+      }${files}
+</article>`;
+    })
+    .join('');
 
-  const combinedMediaGrid =
-    activityPhotosHtml || resultImagesHtml
-      ? `<div class="pf-img-grid">${activityPhotosHtml}${resultImagesHtml}</div>`
-      : '';
-
-  const attachmentsHtml = attachments.length
-    ? `<div class="pf-att-list">
-        ${attachments
-          .map((att) => {
-            const href =
-              assetMap && assetMap.attachments && assetMap.attachments[att.id]
-                ? assetMap.attachments[att.id]
-                : att.dataUrl || '#';
-            const dlAttr = escapeHtml(att.name || 'attachment');
-            return `
-              <a class="pf-att-chip" href="${href}" download="${dlAttr}">
-                <span>📎</span>
-                <span>${escapeHtml(att.name)}</span>
-                ${att.size ? `<span style="opacity:0.65;font-weight:400;">(${escapeHtml(att.size)})</span>` : ''}
-              </a>
-            `;
-          })
-          .join('')}
-      </div>`
-    : '';
-
-  return { activityPhotosHtml, resultImagesHtml, imagesHtml: combinedMediaGrid, attachmentsHtml };
+  return `<div id="printable-portfolio-area" class="pdoc" style="--pdoc-accent:${accent}">
+<section class="pdoc-sheet pdoc-cover">
+<p class="pdoc-kicker">${escapeHtml(p.academicYear || '')} 포트폴리오</p>
+<h1>${escapeHtml(p.portfolioTitle || '나의 포트폴리오')}</h1>
+${p.subtitle ? `<p class="pdoc-subtitle">${escapeHtml(p.subtitle)}</p>` : ''}
+${info ? `<dl class="pdoc-info">${info}</dl>` : ''}
+${p.introText ? `<div class="pdoc-intro"><h2>나를 소개합니다</h2><p>${escapeHtml(p.introText)}</p></div>` : ''}
+${toc}
+</section>
+${works.length ? `<section class="pdoc-sheet">${workHtml}</section>` : ''}
+</div>`;
 }
 
-function renderFilterPillsHtml(works, activeFilter, accentColor, bgColor = '#FFFFFF') {
-  const subjects = [...new Set(works.map((w) => w.subject).filter(Boolean))];
-  const filters = ['전체', '🚀 프로젝트 모음', '📚 교과별 모음', '📸 활동사진첩', ...subjects];
+export function getPrintDocumentCss() {
   return `
-    <div class="pf-filter-bar" role="tablist" aria-label="포트폴리오 분류 필터">
-      ${filters
-        .map((f) => {
-          const isActive = f === activeFilter;
-          const style = isActive
-            ? `background:${accentColor};color:#FFFFFF;border-color:${accentColor};`
-            : `background:${bgColor};color:#334155;`;
-          return `<button type="button" class="pf-filter-btn" data-pf-subject="${escapeHtml(f)}" style="${style}">${escapeHtml(f)}</button>`;
-        })
-        .join('')}
-    </div>
-  `;
+.pdoc { --pdoc-accent: #1E3A5F; background: #E2E8F0; padding: 24px; border-radius: 12px; color: #0F172A; font-family: 'Pretendard', 'Noto Sans KR', system-ui, sans-serif; line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
+.pdoc *, .pdoc *::before, .pdoc *::after { box-sizing: border-box; }
+.pdoc h1, .pdoc h2, .pdoc p, .pdoc figure, .pdoc ol, .pdoc dl, .pdoc dd { margin: 0; }
+.pdoc-sheet { background: #FFFFFF; max-width: 794px; margin: 0 auto 24px; padding: 48px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12); border-radius: 4px; }
+.pdoc-cover { border-top: 8px solid var(--pdoc-accent); }
+.pdoc-kicker { font-size: 13px; font-weight: 700; color: var(--pdoc-accent); }
+.pdoc-cover h1 { font-size: 32px; line-height: 1.3; margin: 8px 0 6px; }
+.pdoc-subtitle { font-size: 15px; color: #475569; }
+.pdoc-info { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 22px 0; padding: 14px 0; border-top: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; font-size: 14px; }
+.pdoc-info div { display: flex; gap: 8px; }
+.pdoc-info dt { color: #64748B; }
+.pdoc-info dd { font-weight: 700; }
+.pdoc-intro h2, .pdoc-toc h2 { font-size: 14px; color: var(--pdoc-accent); margin-bottom: 6px; }
+.pdoc-intro p { font-size: 14px; white-space: pre-line; }
+.pdoc-toc { margin-top: 24px; }
+.pdoc-toc ol { padding-left: 22px; font-size: 14px; }
+.pdoc-toc li { padding: 3px 0; }
+.pdoc-toc em { font-style: normal; color: #64748B; margin-left: 8px; font-size: 12.5px; }
+.pdoc-work { padding: 20px 0; border-bottom: 1px solid #E2E8F0; break-inside: avoid; page-break-inside: avoid; }
+.pdoc-work:first-child { padding-top: 0; }
+.pdoc-work:last-child { border-bottom: 0; }
+.pdoc-work header { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
+.pdoc-num { font-size: 22px; font-weight: 800; color: var(--pdoc-accent); line-height: 1.2; }
+.pdoc-meta { font-size: 12.5px; color: #64748B; }
+.pdoc-work h2 { font-size: 18px; line-height: 1.4; }
+.pdoc-media { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.pdoc-media.is-single { grid-template-columns: minmax(0, 1fr); }
+.pdoc-media img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
+.pdoc-media.is-single img { aspect-ratio: auto; max-height: 300px; object-fit: contain; background: #F8FAFC; }
+.pdoc-media figure { position: relative; }
+.pdoc-media figure::before { position: absolute; top: 6px; left: 6px; padding: 0 6px; border-radius: 999px; background: rgba(255,255,255,0.9); font-size: 10.5px; font-weight: 700; color: #334155; }
+.pdoc-media figure[data-kind="art"]::before { content: "작품"; }
+.pdoc-media figure[data-kind="activity"]::before { content: "활동"; }
+.pdoc-media figcaption { font-size: 11.5px; color: #64748B; margin-top: 3px; }
+.pdoc-media figcaption small { display: block; }
+.pdoc-content { font-size: 13.5px; white-space: pre-line; }
+.pdoc-reflection { margin-top: 10px; padding: 10px 14px; border-left: 3px solid var(--pdoc-accent); background: #F8FAFC; font-size: 13px; }
+.pdoc-reflection strong { display: block; font-size: 12px; color: var(--pdoc-accent); }
+.pdoc-reflection p { white-space: pre-line; }
+.pdoc-files { margin-top: 8px; font-size: 12px; color: #64748B; }
+@media print {
+  .pdoc { background: #FFFFFF; padding: 0; border-radius: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pdoc-sheet { box-shadow: none; max-width: none; margin: 0; padding: 0; border-radius: 0; }
+  .pdoc-cover { border-top: 0; break-after: page; page-break-after: always; }
 }
-
-export function renderPortfolioHtml(state, options = {}) {
-  const {
-    activeSubject = '전체',
-    isMobile = false,
-    showcaseSlideIdx = 0,
-    assetMap = null
-  } = options;
-
-  const tplId = state.selectedTemplate || 'mag-life';
-  const tplMeta = DESIGN_TEMPLATES.find((t) => t.id === tplId) || DESIGN_TEMPLATES[0];
-  const profile = state.profile || {};
-  const allWorks = Array.isArray(state.works) ? state.works : [];
-
-  let filteredWorks = allWorks;
-  if (activeSubject === '🚀 프로젝트 모음') {
-    filteredWorks = allWorks.filter((w) => w.entryType === 'project');
-  } else if (activeSubject === '📚 교과별 모음') {
-    filteredWorks = allWorks.filter((w) => w.entryType !== 'project');
-  } else if (activeSubject !== '전체' && activeSubject !== '📸 활동사진첩') {
-    filteredWorks = allWorks.filter(
-      (w) => w.subject === activeSubject || w.projectName === activeSubject
-    );
-  }
-
-  const mobileClass = isMobile ? 'is-mobile-preview' : '';
-
-  if (allWorks.length === 0) {
-    return `
-      <div class="pf-root" style="padding:48px 24px;text-align:center;background:#FFFFFF;border-radius:16px;border:1px dashed #CBD5E1;color:#475569;">
-        <div style="font-size:36px;margin-bottom:12px;">📒</div>
-        <h3 style="margin:0 0 8px;font-size:18px;color:#0F172A;">아직 등록된 교과·프로젝트 결과물이 없습니다</h3>
-        <p style="margin:0;font-size:14px;">좌측 [교과·프로젝트·활동사진] 탭에서 첫 기록을 등록해 보세요!</p>
-      </div>
-    `;
-  }
-
-  // Dedicated Activity Photo Album View ('📸 활동사진첩')
-  if (activeSubject === '📸 활동사진첩') {
-    const allActivityPhotos = [];
-    allWorks.forEach((w) => {
-      (w.activityPhotos || []).forEach((ap) => {
-        const src =
-          assetMap && assetMap.activityPhotos && assetMap.activityPhotos[ap.id]
-            ? assetMap.activityPhotos[ap.id]
-            : ap.dataUrl;
-        allActivityPhotos.push({
-          src,
-          caption: ap.caption || ap.name,
-          badge: w.entryType === 'project' ? `🚀 ${w.projectName}` : `📚 ${w.subject}`,
-          period: `${w.semester} ${w.month}`,
-          workTitle: w.title
-        });
-      });
-    });
-
-    return `
-      <div class="pf-root" style="background:${tplMeta.colors.bg};color:${tplMeta.colors.text};border-radius:16px;padding:32px;border:1px solid ${tplMeta.colors.border};">
-        <header style="border-bottom:2px solid ${tplMeta.colors.accent};padding-bottom:20px;margin-bottom:24px;">
-          <div style="font-size:12px;font-weight:800;color:${tplMeta.colors.accent};letter-spacing:0.08em;">STUDENT ACTIVITY PHOTO ARCHIVE · 1년 활동 사진첩</div>
-          <h1 style="font-size:28px;font-weight:800;margin:6px 0;">📸 ${escapeHtml(profile.studentName)}의 교실 & 프로젝트 활동 사진첩</h1>
-          <p style="font-size:13.5px;opacity:0.8;margin:0 0 16px;">수업 시간과 융합 프로젝트 현장에서 직접 탐구하고 발표하며 기록한 생생한 활동 스냅 사진 모음입니다.</p>
-          ${renderFilterPillsHtml(allWorks, activeSubject, tplMeta.colors.accent, '#FFFFFF')}
-        </header>
-        <div class="pf-img-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;">
-          ${
-            allActivityPhotos.length === 0
-              ? `<p style="font-size:14px;">등록된 활동 사진이 없습니다. 편집창의 [📸 학생 활동 사진 올리기]에서 사진을 추가해 보세요!</p>`
-              : allActivityPhotos
-                  .map(
-                    (ph, idx) => `
-                <div style="background:#FFFFFF;color:#0F172A;border-radius:14px;overflow:hidden;border:1px solid #CBD5E1;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
-                  <img src="${ph.src}" alt="${escapeHtml(ph.caption)}" data-lightbox-src="${ph.src}" data-lightbox-caption="${escapeHtml(ph.caption)}" style="width:100%;height:210px;object-fit:cover;cursor:zoom-in;display:block;" />
-                  <div style="padding:16px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;margin-bottom:6px;">
-                      <span style="background:${tplMeta.colors.accent};color:#FFF;padding:2px 8px;border-radius:4px;font-weight:700;">SNAP #0${idx + 1} · ${escapeHtml(ph.badge)}</span>
-                      <span style="color:#64748B;">${escapeHtml(ph.period)}</span>
-                    </div>
-                    <div style="font-size:14.5px;font-weight:800;margin-bottom:4px;">${escapeHtml(ph.caption)}</div>
-                    <div style="font-size:12px;color:#64748B;">연계 활동: ${escapeHtml(ph.workTitle)}</div>
-                  </div>
-                </div>
-              `
-                  )
-                  .join('')
-          }
-        </div>
-      </div>
-    `;
-  }
-
-  // =========================================================
-  // NEW MAGAZINE BOOK 1 (시안 7): 포토 에세이 라이프 매거진
-  // =========================================================
-  if (tplId === 'mag-life') {
-    return `
-      <div class="pf-root pf-tpl-mag-life ${mobileClass}">
-        <header class="pf-mag-cover">
-          <div style="font-size:12px;letter-spacing:0.22em;text-transform:uppercase;color:#4A5D4E;font-weight:800;">
-            KINFOLK & STUDENT PHOTO-ESSAY MAGAZINE · ${escapeHtml(profile.academicYear)}
-          </div>
-          <h1 style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:clamp(26px,4vw,42px);font-weight:800;margin:12px 0 8px;">
-            ${escapeHtml(profile.portfolioTitle)}
-          </h1>
-          <p style="font-family:'Nanum Myeongjo',Georgia,serif;font-style:italic;color:#57534E;font-size:15px;margin:0 0 14px;">
-            "${escapeHtml(profile.subtitle)}"
-          </p>
-          <div style="display:inline-block;padding:5px 16px;border-radius:999px;background:#E6E4DC;font-size:12.5px;font-weight:700;margin-bottom:12px;">
-            EDITOR · ${escapeHtml(profile.schoolName)} ${escapeHtml(profile.gradeClass)} ${escapeHtml(profile.studentName)}
-          </div>
-          <p style="max-width:700px;margin:0 auto 18px;font-size:13.5px;color:#44403C;">${escapeHtml(profile.introText)}</p>
-          <div style="display:flex;justify-content:center;">
-            ${renderFilterPillsHtml(allWorks, activeSubject, '#4A5D4E', '#FFFFFF')}
-          </div>
-        </header>
-
-        <div>
-          ${filteredWorks
-            .map((w, idx) => {
-              const media = renderWorkMediaHtml(w, { assetMap });
-              return `
-                <article class="pf-mag-spread pf-work-card" data-work-id="${escapeHtml(w.id)}">
-                  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;border-bottom:1px solid #E2DFD5;padding-bottom:10px;margin-bottom:14px;">
-                    ${renderEntryCategoryBadge(w, '#4A5D4E')}
-                    <span style="font-family:'Nanum Myeongjo',Georgia,serif;font-style:italic;font-size:12.5px;color:#78716C;">PHOTO ESSAY ISSUE #0${idx + 1}</span>
-                  </div>
-                  <h2 style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:23px;font-weight:800;margin:0 0 14px;">${escapeHtml(w.title)}</h2>
-                  ${media.imagesHtml}
-                  <div style="display:grid;grid-template-columns:${isMobile ? '1fr' : '2fr 1fr'};gap:20px;margin-top:16px;align-items:start;">
-                    <p style="font-size:14px;color:#334155;margin:0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                    <div style="background:#F6F5F0;border-left:4px solid #4A5D4E;padding:14px;border-radius:0 10px 10px 0;font-size:13px;">
-                      <strong style="color:#4A5D4E;display:block;margin-bottom:4px;">EDITOR'S REFLECTION · 성찰</strong>
-                      "${escapeHtml(w.reflection)}"
-                      ${media.attachmentsHtml}
-                    </div>
-                  </div>
-                </article>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  // =========================================================
-  // NEW MAGAZINE BOOK 2 (시안 8): 팝 컬처 & 아트진 매거진
-  // =========================================================
-  if (tplId === 'mag-zine') {
-    return `
-      <div class="pf-root pf-tpl-mag-zine ${mobileClass}">
-        <header class="pf-zine-box" style="background:#FACC15;padding:26px;">
-          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;border-bottom:2px solid #111111;padding-bottom:10px;margin-bottom:14px;font-size:12px;font-weight:900;">
-            <span style="background:#111111;color:#FFFFFF;padding:3px 10px;border-radius:4px;">YOUTH ART-ZINE & PROJECT ISSUE</span>
-            <span>${escapeHtml(profile.academicYear)} · ${escapeHtml(profile.schoolName)} ${escapeHtml(profile.gradeClass)} ${escapeHtml(profile.studentName)}</span>
-          </div>
-          <h1 style="font-size:clamp(26px,3.8vw,40px);font-weight:900;margin:0 0 8px;letter-spacing:-0.02em;">${escapeHtml(profile.portfolioTitle)}</h1>
-          <p style="font-size:13.5px;font-weight:700;margin:0 0 16px;">${escapeHtml(profile.introText)}</p>
-          <div style="padding-top:12px;border-top:2px solid #111111;">
-            ${renderFilterPillsHtml(allWorks, activeSubject, '#EA580C', '#FFFFFF')}
-          </div>
-        </header>
-
-        <div>
-          ${filteredWorks
-            .map((w, idx) => {
-              const media = renderWorkMediaHtml(w, { assetMap });
-              const isProj = w.entryType === 'project';
-              return `
-                <article class="pf-zine-box pf-work-card" style="background:${isProj ? '#FFF7ED' : '#FFFFFF'};" data-work-id="${escapeHtml(w.id)}">
-                  <div style="background:${isProj ? '#EA580C' : '#111111'};color:#FFFFFF;padding:12px 20px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;font-weight:900;">
-                    <span>${isProj ? `★ SPECIAL PROJECT FEATURE · ${escapeHtml(w.projectName)}` : `SUBJECT ZINE COLUMN #0${idx + 1} · ${escapeHtml(w.subject)}`}</span>
-                    <span>${escapeHtml(w.semester)} ${escapeHtml(w.month)} ${w.linkedSubjects ? `| ${escapeHtml(w.linkedSubjects)}` : ''}</span>
-                  </div>
-                  <div style="padding:22px;">
-                    <h3 style="font-size:21px;font-weight:900;margin:0 0 8px;">${escapeHtml(w.title)}</h3>
-                    ${
-                      w.projectRole
-                        ? `<div style="display:inline-block;padding:3px 10px;background:#FACC15;border:1.5px solid #111;border-radius:6px;font-size:12px;font-weight:800;margin-bottom:10px;">나의 역할: ${escapeHtml(w.projectRole)}</div>`
-                        : ''
-                    }
-                    ${media.imagesHtml}
-                    <p style="font-size:14px;margin:12px 0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                    <div style="padding:14px;background:rgba(250,204,21,0.35);border:2px solid #111111;border-radius:10px;font-size:13px;font-weight:700;">
-                      📌 ZINE NOTE (배운 점 & 성찰): ${escapeHtml(w.reflection)}
-                    </div>
-                    ${media.attachmentsHtml}
-                  </div>
-                </article>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  // =========================================================
-  // NEW MAGAZINE BOOK 3 (시안 9): 클래식 북저널 & 무크지
-  // =========================================================
-  if (tplId === 'mag-book') {
-    return `
-      <div class="pf-root pf-tpl-mag-book ${mobileClass}">
-        <header style="text-align:center;border-bottom:2px solid #6B1D2F;padding-bottom:22px;margin-bottom:28px;">
-          <div style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:12px;font-weight:800;letter-spacing:0.15em;color:#6B1D2F;">
-            LITERARY MOOOK & TWO-PAGE BOOK JOURNAL · ${escapeHtml(profile.academicYear)}
-          </div>
-          <h1 style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:clamp(26px,3.8vw,38px);font-weight:800;margin:10px 0 6px;">
-            ${escapeHtml(profile.portfolioTitle)}
-          </h1>
-          <p style="font-family:'Nanum Myeongjo',Georgia,serif;font-style:italic;font-size:14px;color:#57534E;margin:0 0 16px;">
-            ${escapeHtml(profile.subtitle)} — ${escapeHtml(profile.schoolName)} ${escapeHtml(profile.gradeClass)} ${escapeHtml(profile.studentName)}
-          </p>
-          <div style="display:flex;justify-content:center;">
-            ${renderFilterPillsHtml(allWorks, activeSubject, '#6B1D2F', '#EFE9D8')}
-          </div>
-        </header>
-
-        <div>
-          ${filteredWorks
-            .map((w, idx) => {
-              const media = renderWorkMediaHtml(w, { assetMap });
-              const firstChar = (w.content || '배').charAt(0);
-              const restText = (w.content || '').slice(1);
-              return `
-                <article class="pf-book-spread pf-work-card" data-work-id="${escapeHtml(w.id)}">
-                  <div class="pf-book-page-left">
-                    <div style="display:flex;justify-content:space-between;border-bottom:1px solid #C8B9A6;padding-bottom:6px;margin-bottom:12px;font-family:'Nanum Myeongjo',serif;font-size:12px;font-weight:800;color:#6B1D2F;">
-                      <span>${w.entryType === 'project' ? `PROJECT CHAPTER · ${escapeHtml(w.projectName)}` : `SUBJECT CHAPTER · ${escapeHtml(w.subject)}`}</span>
-                      <span>p. ${idx * 2 + 2}</span>
-                    </div>
-                    ${renderEntryCategoryBadge(w, '#6B1D2F')}
-                    <h3 style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:21px;font-weight:800;margin:8px 0 14px;">${escapeHtml(w.title)}</h3>
-                    <p style="font-size:14px;line-height:1.75;white-space:pre-line;">
-                      <span style="float:left;font-family:'Nanum Myeongjo',Georgia,serif;font-size:38px;font-weight:800;color:#6B1D2F;line-height:1;margin-right:8px;">${escapeHtml(firstChar)}</span>${escapeHtml(restText)}
-                    </p>
-                    <div style="margin-top:18px;padding:12px 16px;background:rgba(107,29,47,0.08);border-left:4px solid #6B1D2F;border-radius:0 8px 8px 0;font-size:13px;">
-                      <strong style="color:#6B1D2F;display:block;margin-bottom:4px;">성찰의 책갈피:</strong>
-                      "${escapeHtml(w.reflection)}"
-                    </div>
-                  </div>
-                  <div class="pf-book-page-right">
-                    <div style="display:flex;justify-content:space-between;border-bottom:1px solid #C8B9A6;padding-bottom:6px;margin-bottom:12px;font-family:'Nanum Myeongjo',serif;font-size:12px;font-weight:800;color:#8C6D46;">
-                      <span>PHOTOGRAPHIC PLATES · 활동 사진 및 작품 도판</span>
-                      <span>p. ${idx * 2 + 3}</span>
-                    </div>
-                    ${media.imagesHtml || `<div style="padding:32px;text-align:center;border:1px dashed #C8B9A6;border-radius:10px;color:#78716C;font-size:13px;">수록된 사진 도판이 없습니다.</div>`}
-                    ${media.attachmentsHtml}
-                  </div>
-                </article>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  // 1. EDITORIAL MAGAZINE
-  if (tplId === 'editorial') {
-    const leadWork = filteredWorks[0] || allWorks[0];
-    const restWorks = filteredWorks.slice(1);
-    const leadMedia = renderWorkMediaHtml(leadWork, { assetMap });
-
-    return `
-      <div class="pf-root pf-tpl-editorial ${mobileClass}">
-        <header class="pf-masthead">
-          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;font-size:12px;color:#57534E;border-bottom:1px solid #D6CFC5;padding-bottom:10px;">
-            <span>STUDENT ANNUAL PORTFOLIO EDITION</span>
-            <span>${escapeHtml(profile.academicYear)}</span>
-            <span>${escapeHtml(profile.schoolName)} ${escapeHtml(profile.gradeClass)} · ${escapeHtml(profile.studentName)}</span>
-          </div>
-          <h1 style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:clamp(26px,4vw,42px);font-weight:800;margin:16px 0 8px;">${escapeHtml(profile.portfolioTitle)}</h1>
-          <p style="font-family:'Nanum Myeongjo',Georgia,serif;font-style:italic;color:#57534E;margin:0 0 16px;">"${escapeHtml(profile.subtitle)}"</p>
-          ${renderFilterPillsHtml(allWorks, activeSubject, '#C85A32', '#F2ECE1')}
-        </header>
-
-        <div class="pf-body">
-          <div class="pf-lead-grid">
-            <aside class="pf-author-box">
-              <div style="font-size:11px;font-weight:800;color:#C85A32;margin-bottom:6px;">PROLOGUE · 작가 소개</div>
-              <div style="font-size:17px;font-weight:800;margin-bottom:6px;">${escapeHtml(profile.studentName)}</div>
-              <div style="font-size:12.5px;color:#57534E;margin-bottom:12px;">${escapeHtml(profile.schoolName)} ${escapeHtml(profile.gradeClass)}</div>
-              <p style="font-size:13.5px;margin:0;white-space:pre-line;">${escapeHtml(profile.introText)}</p>
-            </aside>
-
-            <article class="pf-work-card" data-work-id="${escapeHtml(leadWork.id)}">
-              ${renderEntryCategoryBadge(leadWork, '#C85A32')}
-              <h2 style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:24px;font-weight:800;margin:0 0 12px;">${escapeHtml(leadWork.title)}</h2>
-              ${leadMedia.imagesHtml}
-              <p style="font-size:14.5px;margin:10px 0;white-space:pre-line;">${escapeHtml(leadWork.content)}</p>
-              ${leadWork.reflection ? `<div class="pf-reflection"><strong>성찰 노트:</strong> ${escapeHtml(leadWork.reflection)}</div>` : ''}
-              ${leadMedia.attachmentsHtml}
-            </article>
-          </div>
-
-          <div class="pf-article-grid">
-            ${restWorks
-              .map((w) => {
-                const media = renderWorkMediaHtml(w, { assetMap });
-                return `
-                  <article class="pf-article-card pf-work-card" data-work-id="${escapeHtml(w.id)}">
-                    ${renderEntryCategoryBadge(w, '#C85A32')}
-                    <h3 style="font-family:'Nanum Myeongjo',Georgia,serif;font-size:19px;font-weight:800;margin:0 0 10px;">${escapeHtml(w.title)}</h3>
-                    ${media.imagesHtml}
-                    <p style="font-size:13.5px;margin:8px 0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                    ${w.reflection ? `<div class="pf-reflection"><strong>배움과 성찰:</strong> ${escapeHtml(w.reflection)}</div>` : ''}
-                    ${media.attachmentsHtml}
-                  </article>
-                `;
-              })
-              .join('')}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // 2. NORDIC GALLERY
-  if (tplId === 'gallery') {
-    return `
-      <div class="pf-root pf-tpl-gallery ${mobileClass}">
-        <header class="pf-header">
-          <span style="display:inline-block;padding:4px 12px;border-radius:999px;background:rgba(61,107,88,0.12);color:#3D6B58;font-size:11.5px;font-weight:700;">
-            EXHIBITION CATALOGUE · ${escapeHtml(profile.academicYear)}
-          </span>
-          <h1 style="font-size:32px;font-weight:300;margin:10px 0;">${escapeHtml(profile.portfolioTitle)}</h1>
-          <p style="font-size:13.5px;color:#475569;max-width:680px;margin:0 auto 16px;">${escapeHtml(profile.introText)}</p>
-          <div style="display:flex;justify-content:center;">
-            ${renderFilterPillsHtml(allWorks, activeSubject, '#3D6B58', '#F1F5F9')}
-          </div>
-        </header>
-        <div class="pf-grid">
-          ${filteredWorks
-            .map((w) => {
-              const media = renderWorkMediaHtml(w, { assetMap });
-              return `
-                <article class="pf-card pf-work-card" data-work-id="${escapeHtml(w.id)}">
-                  ${renderEntryCategoryBadge(w, '#3D6B58')}
-                  <h3 style="font-size:17px;font-weight:800;margin:0 0 10px;">${escapeHtml(w.title)}</h3>
-                  ${media.imagesHtml}
-                  <p style="font-size:13.5px;color:#334155;margin:10px 0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                  <div style="padding:10px 12px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;font-size:12.5px;color:#14532D;">
-                    <strong>작가 노트:</strong> ${escapeHtml(w.reflection)}
-                  </div>
-                  ${media.attachmentsHtml}
-                </article>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  // 3. CHRONICLE TIMELINE
-  if (tplId === 'timeline') {
-    return `
-      <div class="pf-root pf-tpl-timeline ${mobileClass}">
-        <header class="pf-header">
-          <div style="font-size:12px;color:#FCD34D;font-weight:700;margin-bottom:6px;">365 DAYS GROWTH CHRONICLE · ${escapeHtml(profile.schoolName)} ${escapeHtml(profile.studentName)}</div>
-          <h1 style="font-size:30px;font-weight:800;margin:0 0 8px;">${escapeHtml(profile.portfolioTitle)}</h1>
-          <p style="font-size:13.5px;color:#E2E8F0;margin:0 0 16px;">${escapeHtml(profile.introText)}</p>
-          ${renderFilterPillsHtml(allWorks, activeSubject, '#D97706', '#FFFFFF')}
-        </header>
-        <div class="pf-track">
-          ${filteredWorks
-            .map((w) => {
-              const media = renderWorkMediaHtml(w, { assetMap });
-              return `
-                <article class="pf-node pf-work-card" data-work-id="${escapeHtml(w.id)}">
-                  ${renderEntryCategoryBadge(w, '#1B2A4A')}
-                  <h3 style="font-size:19px;font-weight:800;margin:0 0 10px;">${escapeHtml(w.title)}</h3>
-                  ${media.imagesHtml}
-                  <p style="font-size:14px;color:#334155;margin:10px 0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                  <div style="padding:12px 16px;border-radius:10px;background:#FFFBEB;border:1px solid #FDE68A;font-size:13px;color:#78350F;">
-                    <strong>🌱 성장 기록:</strong> ${escapeHtml(w.reflection)}
-                  </div>
-                  ${media.attachmentsHtml}
-                </article>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  // 4. ACADEMIC RESEARCH JOURNAL
-  if (tplId === 'academic') {
-    return `
-      <div class="pf-root pf-tpl-academic ${mobileClass}">
-        <header class="pf-header">
-          <div style="font-size:12px;color:#93C5FD;margin-bottom:6px;">ACADEMIC PORTFOLIO & PROJECT ARCHIVE</div>
-          <h1 style="font-size:28px;font-weight:800;margin:0 0 10px;">${escapeHtml(profile.portfolioTitle)}</h1>
-          <div style="font-size:13px;color:#E0F2FE;margin-bottom:14px;">작성자: ${escapeHtml(profile.schoolName)} ${escapeHtml(profile.gradeClass)} ${escapeHtml(profile.studentName)}</div>
-          ${renderFilterPillsHtml(allWorks, activeSubject, '#2563EB', '#FFFFFF')}
-        </header>
-        <div class="pf-section-list">
-          ${filteredWorks
-            .map((w, idx) => {
-              const media = renderWorkMediaHtml(w, { assetMap });
-              return `
-                <section class="pf-work-card" style="border:1px solid #CBD5E1;border-radius:12px;overflow:hidden;" data-work-id="${escapeHtml(w.id)}">
-                  <div style="background:#F1F5F9;padding:14px 20px;border-bottom:1px solid #CBD5E1;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;">
-                    <h3 style="font-size:17px;font-weight:800;margin:0;">0${idx + 1}. ${escapeHtml(w.title)}</h3>
-                    ${renderEntryCategoryBadge(w, '#1E3A5F')}
-                  </div>
-                  <div style="padding:20px;">
-                    ${media.imagesHtml}
-                    <div style="display:grid;grid-template-columns:${isMobile ? '1fr' : '1fr 1fr'};gap:16px;margin-top:12px;">
-                      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px;">
-                        <div style="font-size:12.5px;font-weight:800;color:#1E3A5F;margin-bottom:6px;">1. 탐구 및 프로젝트 내용</div>
-                        <p style="font-size:13.5px;margin:0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                      </div>
-                      <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:14px;">
-                        <div style="font-size:12.5px;font-weight:800;color:#1E40AF;margin-bottom:6px;">2. 결론 및 자기 성찰</div>
-                        <p style="font-size:13.5px;margin:0;white-space:pre-line;">${escapeHtml(w.reflection)}</p>
-                      </div>
-                    </div>
-                    ${media.attachmentsHtml}
-                  </div>
-                </section>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  // 5. CREATIVE SCRAPBOOK
-  if (tplId === 'scrapbook') {
-    return `
-      <div class="pf-root pf-tpl-scrapbook ${mobileClass}">
-        <div style="max-width:760px;margin:0 auto 28px;background:#FFF;border:2px solid #E6DEC8;border-radius:18px;padding:24px;text-align:center;">
-          <span style="font-size:12px;font-weight:800;color:#E06D53;">🎨 ${escapeHtml(profile.schoolName)} ${escapeHtml(profile.studentName)}의 아틀리에 스크랩북</span>
-          <h1 style="font-size:28px;font-weight:800;margin:8px 0;">${escapeHtml(profile.portfolioTitle)}</h1>
-          <p style="font-size:13.5px;color:#5D4037;margin:0 0 14px;">${escapeHtml(profile.introText)}</p>
-          <div style="display:flex;justify-content:center;">
-            ${renderFilterPillsHtml(allWorks, activeSubject, '#E06D53', '#F5EFE6')}
-          </div>
-        </div>
-        <div class="pf-scrap-grid">
-          ${filteredWorks
-            .map((w) => {
-              const media = renderWorkMediaHtml(w, { assetMap });
-              return `
-                <article style="background:#FFF;border:1px solid #E6DEC8;border-radius:16px;padding:22px;box-shadow:0 6px 16px rgba(0,0,0,0.05);" class="pf-work-card" data-work-id="${escapeHtml(w.id)}">
-                  ${renderEntryCategoryBadge(w, '#E06D53')}
-                  <h3 style="font-size:18px;font-weight:800;margin:0 0 10px;">${escapeHtml(w.title)}</h3>
-                  ${media.imagesHtml}
-                  <p style="font-size:13.5px;margin:10px 0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                  <div style="padding:12px;background:#FFF9DB;border:1px solid #FDE047;border-radius:10px;font-size:13px;">
-                    <strong>📌 나의 한 줄 일기 & 성찰:</strong> ${escapeHtml(w.reflection)}
-                  </div>
-                  ${media.attachmentsHtml}
-                </article>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  // 6. SHOWCASE DECK
-  const safeSlideIdx = showcaseSlideIdx >= filteredWorks.length ? 0 : showcaseSlideIdx;
-  const currentSlide = filteredWorks[safeSlideIdx] || filteredWorks[0];
-  const slideMedia = renderWorkMediaHtml(currentSlide, { assetMap });
-
-  return `
-    <div class="pf-root pf-tpl-showcase ${mobileClass}" style="padding:28px;">
-      <header style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #3F3F46;padding-bottom:16px;margin-bottom:20px;">
-        <div>
-          <div style="font-size:11.5px;font-weight:800;color:#2DD4BF;">INTERACTIVE SHOWCASE DECK</div>
-          <h1 style="font-size:22px;font-weight:800;margin:4px 0 0;">${escapeHtml(profile.portfolioTitle)}</h1>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button type="button" class="pf-filter-btn" data-pf-slide-nav="prev" style="background:#27272A;color:#FFF;">← 이전</button>
-          <span style="font-size:12.5px;font-weight:800;padding:5px 12px;border-radius:8px;background:rgba(20,184,166,0.2);color:#5EEAD4;">${safeSlideIdx + 1} / ${filteredWorks.length}</span>
-          <button type="button" class="pf-filter-btn" data-pf-slide-nav="next" style="background:#14B8A6;color:#09090B;">다음 →</button>
-        </div>
-      </header>
-      <div style="margin-bottom:16px;">
-        ${renderFilterPillsHtml(allWorks, activeSubject, '#14B8A6', '#27272A')}
-      </div>
-      <article style="background:#27272A;border:1px solid #3F3F46;border-radius:16px;padding:24px;">
-        ${renderEntryCategoryBadge(currentSlide, '#14B8A6')}
-        <h2 style="font-size:22px;font-weight:800;margin:0 0 12px;color:#FFF;">${escapeHtml(currentSlide.title)}</h2>
-        ${slideMedia.imagesHtml}
-        <p style="font-size:14px;color:#E4E4E7;margin:12px 0;white-space:pre-line;">${escapeHtml(currentSlide.content)}</p>
-        <div style="padding:12px 16px;border-radius:10px;background:#18181B;border:1px solid rgba(20,184,166,0.4);font-size:13px;color:#CCFBF1;">
-          <strong style="color:#2DD4BF;">💡 배우고 성장한 점:</strong> ${escapeHtml(currentSlide.reflection)}
-        </div>
-        ${slideMedia.attachmentsHtml}
-      </article>
-    </div>
-  `;
-}
-
-export function renderPrintDocumentHtml(state) {
-  const tpl = DESIGN_TEMPLATES.find((t) => t.id === state.selectedTemplate) || DESIGN_TEMPLATES[0];
-  const accent = tpl.colors.accent === '#14B8A6' ? '#0F766E' : tpl.colors.accent;
-  const profile = state.profile || {};
-  const works = Array.isArray(state.works) ? state.works : [];
-
-  return `
-    <div id="printable-portfolio-area" class="pf-root pf-print-wrapper">
-      <div class="pf-a4-page">
-        <div style="border-bottom:4px solid ${accent};padding-bottom:20px;margin-bottom:22px;">
-          <div style="font-size:12px;font-weight:800;letter-spacing:0.08em;color:${accent};text-transform:uppercase;">
-            STUDENT ANNUAL PORTFOLIO · ${escapeHtml(profile.academicYear || '2026학년도')}
-          </div>
-          <h1 style="font-size:30px;font-weight:800;margin:8px 0 6px;color:#0F172A;">
-            ${escapeHtml(profile.portfolioTitle || '학생 포트폴리오')}
-          </h1>
-          ${profile.subtitle ? `<p style="font-size:14.5px;color:#475569;margin:0 0 14px;">${escapeHtml(profile.subtitle)}</p>` : ''}
-          <div style="display:flex;flex-wrap:wrap;gap:20px;font-size:13px;color:#334155;">
-            <span><strong>학교/학급:</strong> ${escapeHtml(profile.schoolName)} ${escapeHtml(profile.gradeClass)}</span>
-            <span><strong>이름:</strong> ${escapeHtml(profile.studentName)}</span>
-            <span><strong>적용 양식:</strong> ${escapeHtml(tpl.name)}</span>
-          </div>
-        </div>
-
-        <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:16px;margin-bottom:22px;">
-          <div style="font-size:12.5px;font-weight:800;color:${accent};margin-bottom:6px;">나의 소개 (Student Introduction)</div>
-          <p style="font-size:13px;color:#1E293B;margin:0;white-space:pre-line;">${escapeHtml(profile.introText)}</p>
-        </div>
-
-        <div>
-          <div style="font-size:12px;font-weight:800;color:${accent};text-transform:uppercase;margin-bottom:12px;">교과별 & 프로젝트별 결과물 및 활동 사진 상세 기록</div>
-          ${works
-            .map((w, idx) => {
-              const media = renderWorkMediaHtml(w);
-              const label =
-                w.entryType === 'project'
-                  ? `🚀 프로젝트 [${escapeHtml(w.projectName)}]`
-                  : `📚 교과 [${escapeHtml(w.subject)}]`;
-              return `
-                <div class="pf-print-work-item">
-                  <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #E2E8F0;padding-bottom:8px;margin-bottom:10px;">
-                    <div style="font-size:15px;font-weight:800;color:#0F172A;">
-                      <span style="color:${accent};">0${idx + 1}. ${label}</span> ${escapeHtml(w.title)}
-                    </div>
-                    <span style="font-size:12px;color:#64748B;">${escapeHtml(w.semester)} ${escapeHtml(w.month)}</span>
-                  </div>
-                  ${media.imagesHtml}
-                  <p style="font-size:13px;color:#1E293B;margin:8px 0;white-space:pre-line;">${escapeHtml(w.content)}</p>
-                  ${
-                    w.reflection
-                      ? `<div style="background:#F8FAFC;border-left:3px solid ${accent};padding:8px 12px;font-size:12.5px;color:#334155;margin-top:8px;">
-                          <strong>배우고 느낀 점:</strong> ${escapeHtml(w.reflection)}
-                        </div>`
-                      : ''
-                  }
-                </div>
-              `;
-            })
-            .join('')}
-        </div>
-      </div>
-    </div>
-  `;
+`;
 }
