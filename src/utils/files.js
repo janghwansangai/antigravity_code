@@ -51,8 +51,35 @@ async function decodeImage(file) {
   }
 }
 
+/** data URL 사진의 실제 가로·세로 크기 */
+export async function getImageSize(dataUrl) {
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  return { width: img.naturalWidth || 0, height: img.naturalHeight || 0 };
+}
+
+function canvasToDataUrl(canvas, keepAlpha) {
+  if (keepAlpha) {
+    const webp = canvas.toDataURL('image/webp', 0.9);
+    if (webp.startsWith('data:image/webp')) return webp;
+    return canvas.toDataURL('image/png');
+  }
+  return canvas.toDataURL('image/jpeg', 0.88);
+}
+
+/** 사진 형식이 투명 배경을 가질 수 있는지 (PNG·WebP·SVG·GIF) */
+export function mayHaveAlpha(dataUrl) {
+  return /^data:image\/(png|webp|svg|gif)/i.test(dataUrl || '');
+}
+
+/** 캔버스를 사진 형식에 맞게 data URL로 (투명 배경 가능 → WebP, 아니면 JPEG) */
+export function exportCanvas(canvas, sourceDataUrl) {
+  return canvasToDataUrl(canvas, mayHaveAlpha(sourceDataUrl));
+}
+
 /**
- * 휴대폰 사진(수 MB)을 화면에 알맞은 크기로 줄여 data URL로 돌려줍니다.
+ * 휴대폰 사진(수 MB)을 화면에 알맞은 크기로 줄여 { dataUrl, width, height }로 돌려줍니다.
  * - SVG·GIF(움직이는 그림)는 그대로 둡니다.
  * - 이미 작은 사진은 그대로 둡니다.
  * - PNG(투명 배경 가능)는 WebP로, 나머지는 JPEG로 저장합니다.
@@ -60,7 +87,10 @@ async function decodeImage(file) {
  */
 export async function prepareImage(file) {
   const type = file.type || '';
-  if (type === 'image/svg+xml' || type === 'image/gif') return readFileAsDataUrl(file);
+  if (type === 'image/svg+xml' || type === 'image/gif') {
+    const dataUrl = await readFileAsDataUrl(file);
+    return { dataUrl, ...(await getImageSize(dataUrl).catch(() => ({ width: 0, height: 0 }))) };
+  }
 
   const source = await decodeImage(file);
   const width = source.width || source.naturalWidth;
@@ -71,7 +101,7 @@ export async function prepareImage(file) {
   const isSmallEnough = scale === 1 && file.size <= 400 * 1024 && /^image\/(jpeg|png|webp)$/.test(type);
   if (isSmallEnough) {
     if (source.close) source.close();
-    return readFileAsDataUrl(file);
+    return { dataUrl: await readFileAsDataUrl(file), width, height };
   }
 
   const canvas = document.createElement('canvas');
@@ -85,13 +115,30 @@ export async function prepareImage(file) {
   }
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
   if (source.close) source.close();
+  return { dataUrl: canvasToDataUrl(canvas, keepAlpha), width: canvas.width, height: canvas.height };
+}
 
-  if (keepAlpha) {
-    const webp = canvas.toDataURL('image/webp', 0.9);
-    if (webp.startsWith('data:image/webp')) return webp;
-    return canvas.toDataURL('image/png');
+/** 사진을 90° 단위로 돌립니다. degrees: 90(시계 방향) | -90 | 180 */
+export async function rotateDataUrl(dataUrl, degrees = 90) {
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const turn = ((degrees % 360) + 360) % 360;
+  const swap = turn === 90 || turn === 270;
+  const canvas = document.createElement('canvas');
+  canvas.width = swap ? h : w;
+  canvas.height = swap ? w : h;
+  const ctx = canvas.getContext('2d');
+  if (!mayHaveAlpha(dataUrl)) {
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
-  return canvas.toDataURL('image/jpeg', 0.85);
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((turn * Math.PI) / 180);
+  ctx.drawImage(img, -w / 2, -h / 2);
+  return { dataUrl: exportCanvas(canvas, dataUrl), width: canvas.width, height: canvas.height };
 }
 
 /** 파일 이름에 쓸 수 없는 글자를 _ 로 바꿉니다. */

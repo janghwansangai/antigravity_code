@@ -26,7 +26,17 @@ import { attachPortfolioInteractions } from './templates/portfolioRuntime.js';
 import { exportProjectJsonFile, exportSingleHtmlFile } from './export/htmlExporter.js';
 import { generatePortfolioZip } from './export/zipExporter.js';
 import { triggerPdfPrint } from './export/pdfExporter.js';
-import { MAX_ATTACHMENT_BYTES, formatBytes, isImageFile, prepareImage, readFileAsDataUrl, uid } from './utils/files.js';
+import {
+  MAX_ATTACHMENT_BYTES,
+  formatBytes,
+  getImageSize,
+  isImageFile,
+  prepareImage,
+  readFileAsDataUrl,
+  rotateDataUrl,
+  uid
+} from './utils/files.js';
+import { openPhotoEditor } from './editor/photoEditor.js';
 
 const app = document.getElementById('app');
 const $ = (sel) => app.querySelector(sel);
@@ -360,6 +370,10 @@ function photoItemHtml(p, i) {
             : `<button type="button" class="photo-cover" data-action="make-cover" data-id="${esc(p.id)}" title="맨 앞에 크게 보여 줄 대표 사진으로">☆ 대표로</button>`
         }
       </div>
+      <div class="photo-tools">
+        <button type="button" class="photo-tool" data-action="rotate-photo" data-id="${esc(p.id)}" title="오른쪽으로 돌리기" aria-label="사진 돌리기">↻</button>
+        <button type="button" class="photo-tool" data-action="edit-photo" data-id="${esc(p.id)}" title="돌리기·얼굴 가리기">✏️ 고치기</button>
+      </div>
       <input class="input input-sm" type="text" data-photo-caption="${esc(p.id)}" value="${esc(p.caption || '')}" placeholder="사진 설명 (선택)" />
     </li>`;
 }
@@ -401,7 +415,7 @@ function workDetailHtml(state, w) {
     <div class="field">
       <span class="field-label">사진 · 파일 올리기<span class="field-hint"> · 눌러서 고르거나 끌어다 놓으세요</span></span>
       <div class="upload-tiles">${uploadTileHtml('art')}${uploadTileHtml('activity')}${uploadTileHtml('file')}</div>
-      <p class="upload-help">사진은 알맞은 크기로 자동으로 줄여져요 · 여러 장을 한꺼번에 골라도 돼요 · 복사한 그림은 Ctrl+V</p>
+      <p class="upload-help">사진은 알맞은 크기로 자동으로 줄여져요 · 여러 장을 한꺼번에 골라도 돼요 · 복사한 그림은 Ctrl+V<br />방향이 틀리면 <b>↻</b>, 다른 친구 얼굴을 가리려면 <b>✏️ 고치기</b></p>
       ${ui.uploading ? `<p class="uploading">⏳ 올리는 중… 잠깐만 기다려 주세요</p>` : ''}
       ${photos.length ? `<ul class="photo-grid">${photos.map(photoItemHtml).join('')}</ul>` : ''}
       ${
@@ -554,6 +568,7 @@ async function afterPortfolioChanged(message) {
   closeSwitcher();
   renderEditor({ resetScroll: true });
   renderPreview();
+  backfillPhotoSizes();
   if (message) toast(message);
 }
 
@@ -702,6 +717,82 @@ function makeCover(photoId) {
   schedulePreview();
 }
 
+/** 돌리거나 가린 사진으로 바꿉니다. 새 id를 주어 원래 사진은 저장소에서 지워지게 합니다. */
+function replacePhoto(photoId, result) {
+  const w = currentWork();
+  const bucket = w && findPhoto(w, photoId);
+  if (!bucket || !result) return;
+  const newId = uid('ph');
+  store.markEdited();
+  store.updateWork(w.id, {
+    [bucket]: w[bucket].map((p) =>
+      p.id === photoId ? { ...p, id: newId, dataUrl: result.dataUrl, width: result.width, height: result.height } : p
+    ),
+    coverPhotoId: w.coverPhotoId === photoId ? newId : w.coverPhotoId
+  });
+  renderEditor();
+  schedulePreview();
+}
+
+function photoById(photoId) {
+  const w = currentWork();
+  return w ? [...w.images, ...w.activityPhotos].find((p) => p.id === photoId) : null;
+}
+
+let photoBusy = false;
+async function rotatePhoto(photoId) {
+  const photo = photoById(photoId);
+  if (!photo || photoBusy) return;
+  photoBusy = true;
+  try {
+    replacePhoto(photoId, await rotateDataUrl(photo.dataUrl, 90));
+  } catch (err) {
+    console.error(err);
+    toast('사진을 돌리지 못했어요.');
+  } finally {
+    photoBusy = false;
+  }
+}
+
+async function editPhoto(photoId) {
+  const photo = photoById(photoId);
+  if (!photo || photoBusy) return;
+  photoBusy = true;
+  try {
+    $('#toast').classList.remove('show');
+    const result = await openPhotoEditor(photo.dataUrl);
+    if (result) {
+      replacePhoto(photoId, result);
+      toast('✨ 고친 사진으로 바꿨어요.');
+    }
+  } finally {
+    photoBusy = false;
+  }
+}
+
+/** 예전에 올린 사진처럼 가로·세로 크기 정보가 없는 사진의 크기를 채웁니다(자동 배치에 필요). */
+async function backfillPhotoSizes() {
+  const state = store.getState();
+  const jobs = [];
+  state.works.forEach((w) =>
+    ['images', 'activityPhotos'].forEach((b) =>
+      w[b].forEach((p) => {
+        if (!(p.width > 0 && p.height > 0) && p.dataUrl) {
+          jobs.push(getImageSize(p.dataUrl).then((size) => ({ w: w.id, b, id: p.id, size })).catch(() => null));
+        }
+      })
+    )
+  );
+  if (!jobs.length) return;
+  const found = (await Promise.all(jobs)).filter((x) => x && x.size.width > 0);
+  if (store.getState() !== state) return; // 그사이 다른 포트폴리오로 바뀜
+  found.forEach(({ w, b, id, size }) => {
+    const work = store.getWork(w);
+    if (work) store.updateWork(w, { [b]: work[b].map((p) => (p.id === id ? { ...p, ...size } : p)) });
+  });
+  schedulePreview();
+}
+
 function removeFile(fileId) {
   const w = currentWork();
   if (!w) return;
@@ -732,7 +823,7 @@ async function addFilesToWork(workId, fileList, kind = 'art') {
   for (const [i, file] of files.entries()) {
     try {
       if (isImageFile(file)) {
-        photos.push({ id: uid('ph'), name: file.name, caption: '', dataUrl: await prepareImage(file) });
+        photos.push({ id: uid('ph'), name: file.name, caption: '', ...(await prepareImage(file)) });
       } else if (file.size > MAX_ATTACHMENT_BYTES) {
         problems.push(`${file.name}: ${formatBytes(MAX_ATTACHMENT_BYTES)}보다 커서 올릴 수 없어요.`);
       } else {
@@ -796,6 +887,7 @@ async function importBackup(file) {
     ui.editingId = null;
     setStep('works');
     schedulePreview();
+    backfillPhotoSizes();
     toast('📂 백업을 불러왔어요. 이어서 편집하세요!');
   } catch (err) {
     console.error(err);
@@ -887,6 +979,12 @@ async function onClick(e) {
       break;
     case 'remove-file':
       removeFile(id);
+      break;
+    case 'rotate-photo':
+      await rotatePhoto(id);
+      break;
+    case 'edit-photo':
+      await editPhoto(id);
       break;
     case 'select-template':
       store.setTemplate(id);
@@ -1113,6 +1211,7 @@ async function bootstrap() {
   applyMobileView();
   renderEditor();
   renderPreview();
+  backfillPhotoSizes();
 }
 
 bootstrap();
