@@ -1,6 +1,23 @@
 // Sample SVG Illustrations encoded as Data URIs so they work both in live preview and ZIP/PDF exports
 function svgToDataUri(svgString) {
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svgString.trim());
+  // viewBox 크기를 width/height로도 넣어 브라우저가 실제 크기를 알 수 있게 합니다.
+  const svg = svgString.trim().replace(/<svg ([^>]*?)viewBox="0 0 (\d+) (\d+)"/, '<svg $1width="$2" height="$3" viewBox="0 0 $2 $3"');
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+function svgSize(dataUri) {
+  const m = decodeURIComponent(String(dataUri)).match(/viewBox="0 0 (\d+) (\d+)"/);
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : {};
+}
+
+/** 예시 사진에 가로·세로 크기를 채웁니다(가로/세로에 맞춘 배치에 쓰임). */
+function withPhotoSizes(data) {
+  data.works.forEach((w) => {
+    ['images', 'activityPhotos'].forEach((b) => {
+      w[b] = (w[b] || []).map((p) => ({ ...svgSize(p.dataUrl), ...p }));
+    });
+  });
+  return data;
 }
 
 export const SAMPLE_IMAGES = {
@@ -76,21 +93,17 @@ export const SAMPLE_IMAGES = {
       <text x="320" y="340" text-anchor="middle" fill="#1E4E40" font-family="sans-serif" font-size="19" font-weight="700">🎨 [완성 결과물] 옥상 녹화 식물의 증산 작용 온도 비교 차트</text>
     </svg>
   `),
-  artLibrary: svgToDataUri(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380">
-      <defs>
-        <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#FDE68A"/>
-          <stop offset="50%" stop-color="#FDBA74"/>
-          <stop offset="100%" stop-color="#BAE6FD"/>
-        </linearGradient>
-      </defs>
-      <rect width="640" height="380" fill="url(#sky)"/>
-      <path d="M125 292 A195 175 0 0 1 515 292 Z" fill="#FFFFFF" opacity="0.9" stroke="#475569" stroke-width="3"/>
-      <circle cx="115" cy="260" r="46" fill="#3D6B58"/>
-      <circle cx="530" cy="252" r="52" fill="#2E5A48"/>
-      <rect x="0" y="292" width="640" height="88" fill="#334E43"/>
-      <text x="320" y="344" text-anchor="middle" fill="#FFFBEB" font-family="sans-serif" font-size="19" font-weight="700">🎨 [완성 작품] '내가 꿈꾸는 숲속 미래 도서관' 수채·디지털 일러스트</text>
+  artPoster: svgToDataUri(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 640">
+      <rect width="480" height="640" fill="#FFF4E6"/>
+      <circle cx="240" cy="190" r="120" fill="#FFD166"/>
+      <rect x="70" y="330" width="90" height="210" rx="10" fill="#5AB2FF"/>
+      <rect x="190" y="280" width="100" height="260" rx="10" fill="#FF7A8A"/>
+      <rect x="320" y="350" width="90" height="190" rx="10" fill="#3CC6A4"/>
+      <circle cx="115" cy="300" r="34" fill="#3CC6A4"/>
+      <circle cx="365" cy="320" r="30" fill="#9B87F5"/>
+      <rect x="0" y="540" width="480" height="100" fill="#6B5B95"/>
+      <text x="240" y="598" text-anchor="middle" fill="#FFFFFF" font-family="sans-serif" font-size="24" font-weight="700">🎨 [세로 작품] 숲속 미래 도서관 포스터</text>
     </svg>
   `),
   socialMap: svgToDataUri(`
@@ -122,7 +135,7 @@ export const SCHOOL_LEVEL_SUBJECTS = {
   high: ["국어", "수학", "영어", "통합사회", "통합과학", "한국사", "정보/AI", "예술/체육", "진로·자율·동아리"]
 };
 
-// 포트폴리오 디자인 시안 12종 (1~9: 깔끔한 디자인, 10~12: 귀여운 디자인)
+// 포트폴리오 디자인 시안 15종 (1~9: 깔끔한 디자인, 10~15: 귀여운 디자인)
 // id는 저장된 작업 파일과의 호환을 위해 그대로 유지합니다.
 // colors는 디자인 고르기 미리보기 그림과 PDF 강조색에 쓰입니다. 실제 디자인은 portfolioRenderer.js의 CSS에 있습니다.
 export const DESIGN_TEMPLATES = [
@@ -225,13 +238,40 @@ export const DESIGN_TEMPLATES = [
     description: "활동마다 무지개 색 카드로 바뀌어요. 밝고 신나는 느낌!",
     bestFor: "체험학습·동아리·발표회",
     colors: { bg: "#FFFFFF", text: "#2F3A4A", accent: "#7C6CF2", surface: "#FFF1C9", border: "#E9E5FF" }
+  },
+  {
+    id: "cloud",
+    num: 13,
+    group: "cute",
+    name: "뭉게구름 하늘",
+    description: "파란 하늘에 몽실몽실 구름 카드가 둥실 떠 있어요. 맑고 상쾌해요.",
+    bestFor: "자연 관찰·과학·체험학습",
+    colors: { bg: "#DDF2FF", text: "#2B4A6B", accent: "#4AA8F0", surface: "#FFFFFF", border: "#BFE3FF" }
+  },
+  {
+    id: "bear",
+    num: 14,
+    group: "cute",
+    name: "곰돌이 친구들",
+    description: "카드마다 곰돌이 귀가 쏙! 발자국 무늬와 꿀단지 메모가 포근해요.",
+    bestFor: "저학년 1년 기록, 학급 문집",
+    colors: { bg: "#FFF6EA", text: "#5A3E2B", accent: "#C08A5B", surface: "#FFFFFF", border: "#E8C9A0" }
+  },
+  {
+    id: "space",
+    num: 15,
+    group: "cute",
+    name: "반짝 우주 탐험",
+    description: "별이 반짝이는 밤하늘에 로켓과 행성이 떠 있어요. 인쇄할 땐 밝게 바뀌어요.",
+    bestFor: "과학·탐구·발표회",
+    colors: { bg: "#1B1E4B", text: "#F4F1FF", accent: "#FFE66D", surface: "#2A2E66", border: "#4B4F8F", printAccent: "#5B4BC4" }
   }
 ];
 
 export const DEFAULT_TEMPLATE_ID = "pastel";
 
 export function createSamplePortfolioData() {
-  return {
+  return withPhotoSizes({
     selectedTemplate: DEFAULT_TEMPLATE_ID,
     schoolLevel: "middle",
     customSubjects: ["국어", "수학", "사회", "과학", "영어", "미술", "음악", "체육", "기술·가정", "정보", "창의적 체험활동"],
@@ -408,16 +448,16 @@ export function createSamplePortfolioData() {
         activityPhotos: [],
         images: [
           {
-            id: "img-5",
-            name: "art_future_library.svg",
-            caption: "'내가 꿈꾸는 숲속 미래 도서관' 완성 일러스트",
-            dataUrl: SAMPLE_IMAGES.artLibrary
+            id: "img-5b",
+            name: "art_future_library_poster.svg",
+            caption: "세로로 그린 '숲속 미래 도서관' 포스터",
+            dataUrl: SAMPLE_IMAGES.artPoster
           }
         ],
         attachments: []
       }
     ]
-  };
+  });
 }
 
 export function createBlankPortfolioData() {

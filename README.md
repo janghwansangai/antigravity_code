@@ -3,7 +3,8 @@
 학생이 1년 동안의 **🎨 작품 사진 · 📸 활동 사진 · 📄 PDF**를 올리고 글을 쓰면, 휴대폰과 컴퓨터에서 예쁘게 보이는 포트폴리오를 **웹페이지 파일(.html) · 압축 파일(.zip) · PDF**로 만들어 주는 웹앱입니다.
 
 - 초등학생도 혼자 쓸 수 있게 **3단계**(① 내 소개 → ② 활동 기록 → ③ 꾸미기·저장)로 단순하게
-- 디자인 **12종**: 귀여운 디자인 3종 + 깔끔한 디자인 9종, 누르면 바로 미리보기
+- 디자인 **15종**: 귀여운 디자인 6종 + 깔끔한 디자인 9종, 누르면 바로 미리보기
+- 사진 **돌리기**, 다른 친구 얼굴 **가리기**(모자이크·스티커), 가로/세로 사진에 맞춘 **자동 배치**
 - **서버가 없습니다.** 모든 작업은 학생 각자의 브라우저에서 처리·저장되므로 반 전체가 동시에 써도 서버 부하가 없습니다.
 
 ---
@@ -49,14 +50,16 @@ Cloudflare 대시보드 → **Workers & Pages** → 만들기 → Git 저장소 
    - 업로드 칸 3개: **🎨 작품 사진 / 📸 활동 사진 / 📄 PDF·파일** (눌러서 고르기 · 끌어다 놓기 · Ctrl+V 붙여넣기)
    - 휴대폰 사진(수 MB)은 **자동으로 알맞은 크기(긴 변 1600px)로 줄여** 저장
    - 사진마다 설명 쓰기, `⇄` 작품↔활동 바꾸기, `☆ 대표로`(맨 앞에 크게), `✕` 삭제
+   - `↻` 사진 방향 돌리기, `✏️ 고치기` → 돌리기 · **모자이크 붓**(문질러서 얼굴 가리기) · **스티커**(눌러서 붙이기) · 되돌리기
+     - 저장하면 원래 사진은 저장소에서 지워지고 가린 사진만 남습니다(내보낸 파일에도 가린 사진만 들어감)
    - PDF는 포트폴리오에서 **‘열어 보기’ 카드 + 내려받기 버튼**으로 보임
-3. **꾸미기·저장** — 디자인 12종 중 고르기 → 웹페이지/PDF/ZIP 저장, 백업 저장·불러오기
+3. **꾸미기·저장** — 디자인 15종 중 고르기 → 웹페이지/PDF/ZIP 저장, 백업 저장·불러오기
 
 상단 **이름표(🙂 이름 ▾)** 를 누르면 한 컴퓨터를 여러 학생이 쓸 때 **내 포트폴리오를 골라 이어서** 하거나 **새 친구 포트폴리오**를 만들 수 있습니다(서로 덮어쓰지 않음).
 
 ---
 
-## 🎨 디자인 12종
+## 🎨 디자인 15종
 
 시안 비교 파일: [`portfolio_design_mockups.html`](./portfolio_design_mockups.html) (PC/휴대폰 크기 전환 가능)
 
@@ -65,6 +68,9 @@ Cloudflare 대시보드 → **Workers & Pages** → 만들기 → Git 저장소 
 | 10 | `pastel` | 🧸 말랑 파스텔 *(기본값)* | 초등학생 1년 기록, 학급 활동 |
 | 11 | `crayon` | 🧸 크레파스 그림일기 | 그림·일기·독서 감상 |
 | 12 | `rainbow` | 🧸 알록달록 무지개 | 체험학습·동아리·발표회 |
+| 13 | `cloud` | 🧸 뭉게구름 하늘 | 자연 관찰·과학·체험학습 |
+| 14 | `bear` | 🧸 곰돌이 친구들 | 저학년 1년 기록, 학급 문집 |
+| 15 | `space` | 🧸 반짝 우주 탐험 (인쇄 시 밝게) | 과학·탐구·발표회 |
 | 1 | `editorial` | 신문 칼럼 | 글이 많은 기록 |
 | 2 | `gallery` | 미니멀 갤러리 | 미술·사진·만들기 작품 |
 | 3 | `timeline` | 성장 타임라인 (날짜순 자동 정렬) | 1년의 변화 |
@@ -76,6 +82,8 @@ Cloudflare 대시보드 → **Workers & Pages** → 만들기 → Git 저장소 
 | 9 | `mag-book` | 책 펼침면 | 문집, 1년 기록집 |
 
 모든 디자인에 공통: 분류 버튼(전체·교과·프로젝트·🎨 작품 모음·📸 활동 사진), 사진 크게 보기, 휴대폰 화면 자동 맞춤, 인쇄용 정리.
+
+**가로/세로 사진 자동 배치** — 사진을 자르지 않고 원래 비율 그대로, 같은 줄 사진의 높이를 맞춰 줄 너비를 꽉 채웁니다(2~3장은 한 줄 가득). 사진이 세로형이면 넓은 화면에서 사진과 글을 나란히 놓아 여백을 줄입니다. 예전에 올린 사진도 처음 열 때 크기를 자동으로 읽어 적용합니다.
 
 ---
 
@@ -125,14 +133,15 @@ index.html                         앱 진입점
 src/
   main.js                          편집 화면 (3단계, 업로드, 이름표/포트폴리오 전환, 미리보기)
   style.css                        편집 화면 스타일 (귀엽고 단순하게)
-  data/sampleData.js               시안 12종 메타데이터, 학교급별 과목, 예시 데이터
+  data/sampleData.js               시안 15종 메타데이터, 학교급별 과목, 예시 데이터
   state/store.js                   상태 관리 + IndexedDB 자동 저장 (여러 학생, 사진 분리 저장)
-  templates/portfolioRenderer.js   포트폴리오 HTML 생성 + 시안 12종 CSS + PDF 문서
+  templates/portfolioRenderer.js   포트폴리오 HTML 생성 + 시안 15종 CSS + PDF 문서
   templates/portfolioRuntime.js    분류 버튼·슬라이드·사진 크게 보기·PDF 열기 (앱과 내보낸 파일이 함께 사용)
   export/htmlExporter.js           웹페이지 1파일 내보내기, 작업 백업(.json)
   export/zipExporter.js            ZIP 내보내기
   export/pdfExporter.js            A4 인쇄·PDF 저장
-  utils/files.js                   사진 자동 축소, 파일 읽기·내려받기
+  editor/photoEditor.js            사진 고치기 창 (돌리기·모자이크·스티커·되돌리기)
+  utils/files.js                   사진 자동 축소·돌리기·크기 읽기, 파일 읽기·내려받기
 scripts/
   build-single.mjs                 단일 파일 버전 생성
   build-mockups.mjs                시안 비교 페이지 생성
@@ -140,7 +149,7 @@ scripts/
 
 ### 시안 고치기 · 추가하기
 
-12종 모두 **같은 HTML 구조**(`.pf` → `.pf-cover`, `.pf-works > .pf-work` …)를 쓰고, 디자인은 CSS 테마(`.pf-t-<id>`)로만 다릅니다.
+15종 모두 **같은 HTML 구조**(`.pf` → `.pf-cover`, `.pf-works > .pf-work` …)를 쓰고, 디자인은 CSS 테마(`.pf-t-<id>`)로만 다릅니다.
 
 1. `src/data/sampleData.js`의 `DESIGN_TEMPLATES`에 `{ id, num, group, name, description, bestFor, colors }` 추가 (`group: "cute"`면 ‘귀여운 디자인’ 묶음)
 2. `src/templates/portfolioRenderer.js`의 `getPortfolioTemplatesCss()`에 `.pf-t-<id> { ... }` 블록 추가
@@ -158,8 +167,8 @@ scripts/
   works: [{
     id, entryType: 'subject' | 'project', subject, projectName, projectRole, linkedSubjects,
     semester, month, activityType, title, content, reflection,
-    images: [{ id, name, caption, dataUrl }],          // 🎨 작품 사진
-    activityPhotos: [{ id, name, caption, dataUrl }],  // 📸 활동 사진
+    images: [{ id, name, caption, dataUrl, width, height }],          // 🎨 작품 사진
+    activityPhotos: [{ id, name, caption, dataUrl, width, height }],  // 📸 활동 사진
     attachments: [{ id, name, size, mimeType, dataUrl }], // 📄 PDF·파일
     coverPhotoId                                       // 대표 사진
   }]

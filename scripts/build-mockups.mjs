@@ -3,7 +3,7 @@
  *
  *   npm run build:mockups
  *
- * 앱과 같은 렌더러(src/templates/portfolioRenderer.js)와 예시 데이터로 12종 시안을 한 페이지에 그립니다.
+ * 앱과 같은 렌더러(src/templates/portfolioRenderer.js)와 예시 데이터로 모든 시안을 한 페이지에 그립니다.
  * 시안을 고치면 이 명령으로 다시 만들면 되므로, 비교 파일이 앱과 어긋나지 않습니다.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -53,7 +53,7 @@ const html = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>포트폴리오 디자인 12종 미리보기</title>
+<title>포트폴리오 디자인 ${DESIGN_TEMPLATES.length}종 미리보기</title>
 <!-- 이 파일은 scripts/build-mockups.mjs 로 자동 생성됩니다. 직접 고치지 말고 렌더러를 고친 뒤 npm run build:mockups 를 실행하세요. -->
 ${FONT_LINKS_HTML}
 <style>${getPortfolioTemplatesCss()}</style>
@@ -82,7 +82,7 @@ body.mobile .frame .pf { border-radius: 0; }
 </head>
 <body>
 <div class="top">
-  <h1>🌱 포트폴리오 디자인 12종 미리보기</h1>
+  <h1>🌱 포트폴리오 디자인 ${DESIGN_TEMPLATES.length}종 미리보기</h1>
   <nav>${nav}
     <span class="size" role="group" aria-label="화면 크기"><button type="button" class="on" data-size="pc">💻 PC</button><button type="button" data-size="mobile">📱 휴대폰</button></span>
   </nav>

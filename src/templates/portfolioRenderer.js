@@ -1,7 +1,7 @@
 /**
  * 포트폴리오 렌더러
  *
- * 12종 시안은 모두 "같은 HTML 구조"를 쓰고, 디자인 차이는 CSS 테마(.pf-t-<id>)로만 만듭니다.
+ * 15종 시안은 모두 "같은 HTML 구조"를 쓰고, 디자인 차이는 CSS 테마(.pf-t-<id>)로만 만듭니다.
  *   - 새 시안 추가: sampleData.js의 DESIGN_TEMPLATES에 항목을 넣고, 아래 CSS에 .pf-t-<id> 블록만 추가
  *   - 휴대폰 화면: @container 규칙이 상자 폭(640px 이하)에 맞춰 자동으로 한 줄 배치로 바꿉니다
  *
@@ -20,6 +20,8 @@
  *   work.images         → 🎨 작품 사진 (kind: 'art')
  *   work.activityPhotos → 📸 활동 사진 (kind: 'activity')
  *   work.coverPhotoId   → 대표 사진(맨 앞에 크게)
+ *   photo.width/height  → 가로·세로 크기. 사진을 자르지 않고 비율대로 한 줄을 꽉 채워 배치하고,
+ *                         사진이 세로형이면 넓은 화면에서 사진과 글을 나란히 놓습니다(.portrait-set)
  *
  * 이 파일은 브라우저 API를 쓰지 않으므로 Node(scripts/build-mockups.mjs)에서도 그대로 불러 쓸 수 있습니다.
  */
@@ -80,6 +82,17 @@ function resolveSrc(item, bucket, assetMap) {
   return (assetMap && assetMap[bucket] && assetMap[bucket][item.id]) || item.dataUrl || '';
 }
 
+/** 대표 사진이 세로이고, 사진들이 전체적으로 세로형이면 → 넓은 화면에서 사진과 글을 나란히 */
+function isPortraitSet(photos) {
+  if (!photos.length || photoShape(photos[0]).shape !== 'portrait') return false;
+  const avg = photos.reduce((a, p) => a + photoShape(p).ratio, 0) / photos.length;
+  return avg < 1;
+}
+
+function mediaCountClass(n) {
+  return n === 1 ? 'n-1' : n === 2 ? 'n-2' : n === 3 ? 'n-3' : 'n-many';
+}
+
 function sortBySchoolYear(works) {
   const rank = (w) => {
     const m = SCHOOL_YEAR_MONTHS.indexOf(w.month);
@@ -92,6 +105,12 @@ function sortBySchoolYear(works) {
     .map((x) => x.w);
 }
 
+/** 사진 비율(가로/세로)과 모양. 크기를 모르면 4:3 가로로 봅니다. */
+export function photoShape(photo) {
+  const r = photo?.width > 0 && photo?.height > 0 ? photo.width / photo.height : 4 / 3;
+  return { ratio: Math.min(Math.max(r, 0.3), 4), shape: r > 1.15 ? 'landscape' : r < 0.87 ? 'portrait' : 'square' };
+}
+
 function renderFigure(photo, src, altFallback, extraCaption = '') {
   const caption = String(photo.caption || '').trim();
   const alt = caption || altFallback || '활동 사진';
@@ -99,7 +118,9 @@ function renderFigure(photo, src, altFallback, extraCaption = '') {
     caption || extraCaption
       ? `<figcaption>${escapeHtml(caption)}${extraCaption ? `<small>${escapeHtml(extraCaption)}</small>` : ''}</figcaption>`
       : '';
-  return `<figure class="pf-fig" data-kind="${photo.kind === 'activity' ? 'activity' : 'art'}"><img src="${escapeUrl(src)}" alt="${escapeHtml(alt)}" />${figcaption}</figure>`;
+  const { ratio, shape } = photoShape(photo);
+  const size = photo.width > 0 && photo.height > 0 ? ` width="${Math.round(photo.width)}" height="${Math.round(photo.height)}"` : '';
+  return `<figure class="pf-fig" data-kind="${photo.kind === 'activity' ? 'activity' : 'art'}" data-shape="${shape}" style="--r:${ratio.toFixed(3)}"><img src="${escapeUrl(src)}" alt="${escapeHtml(alt)}"${size} />${figcaption}</figure>`;
 }
 
 // 첨부파일: PDF는 새 창에서 '열어 보기' + 내려받기 버튼, 그 밖의 파일은 '내려받기'
@@ -137,7 +158,7 @@ function renderWork(work, index, ctx) {
   ].join('');
 
   const media = photos.length
-    ? `<div class="pf-media${photos.length === 1 ? ' is-single' : ''}">${photos
+    ? `<div class="pf-media ${mediaCountClass(photos.length)}">${photos
         .map((p) => renderFigure(p, resolveSrc(p, p.bucket, ctx.assetMap), title))
         .join('')}</div>`
     : '';
@@ -157,7 +178,14 @@ function renderWork(work, index, ctx) {
         }${files}</div>`
       : '';
 
-  const classes = ['pf-work', photos.length ? 'has-media' : 'no-media', ctx.markFirst && index === 0 ? 'is-current' : '']
+  const classes = [
+    'pf-work',
+    photos.length ? 'has-media' : 'no-media',
+    photos.length ? `cover-${photoShape(photos[0]).shape}` : '',
+    isPortraitSet(photos) ? 'portrait-set' : '',
+    text ? 'has-text' : '',
+    ctx.markFirst && index === 0 ? 'is-current' : ''
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -310,22 +338,28 @@ export function getPortfolioTemplatesCss() {
 .pf-file-text b { font-size: 13.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-file-text small { font-size: 12px; color: var(--pf-muted); }
 
-.pf-media { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; }
-.pf-media.is-single { grid-template-columns: minmax(0, 1fr); }
-.pf-fig { position: relative; }
+/* 사진 배치: 자르지 않고 원래 비율대로, 같은 줄 사진은 높이를 맞춰 줄 너비를 꽉 채움 (--r = 가로/세로)
+   - 2~3장: 한 줄을 꽉 채움 / 4장 이상: 마지막 줄의 빈 칸(::after)이 사진이 지나치게 커지는 것만 막음 */
+.pf-media, .pf-album { --row-h: 210px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+.pf-media::after, .pf-album::after { content: ""; flex: 2 1 0; }
+.pf-media.n-2, .pf-media.n-3 { --row-h: 90px; }
+.pf-media.n-2::after, .pf-media.n-3::after { display: none; }
+.pf-media.n-1 { --row-h: 440px; justify-content: center; }
+.pf-media.n-1::after { display: none; }
+.pf-fig { position: relative; flex: var(--r, 1.333) 1 calc(var(--r, 1.333) * var(--row-h)); min-width: 0; max-width: 100%; }
+.pf-media.n-1 .pf-fig { flex: 0 1 calc(var(--r, 1.333) * var(--row-h)); }
 .pf-fig::before { position: absolute; top: 8px; left: 8px; z-index: 1; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: #334155; font-size: 11.5px; font-weight: 700; line-height: 1.6; pointer-events: none; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
 .pf-fig[data-kind="art"]::before { content: "🎨 작품"; }
 .pf-fig[data-kind="activity"]::before { content: "📸 활동"; }
-.pf-fig img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; cursor: zoom-in; background: var(--pf-soft); }
-.pf-media.is-single .pf-fig img { aspect-ratio: auto; max-height: 480px; object-fit: contain; }
+.pf-fig img { width: 100%; height: auto; aspect-ratio: var(--r, 1.333); object-fit: cover; border-radius: 10px; cursor: zoom-in; background: var(--pf-soft); }
 .pf-fig figcaption { margin-top: 6px; font-size: 13px; color: var(--pf-muted); line-height: 1.5; }
 .pf-fig figcaption small { display: block; opacity: 0.8; }
 
 /* 분류 버튼 */
 .pf[data-filter="subject"] .pf-work[data-kind="project"],
 .pf[data-filter="project"] .pf-work[data-kind="subject"] { display: none; }
-.pf-album { display: none; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 18px; }
-.pf[data-filter="art"] .pf-album, .pf[data-filter="activity"] .pf-album { display: grid; }
+.pf .pf-album { display: none; --row-h: 220px; gap: 16px; }
+.pf[data-filter="art"] .pf-album, .pf[data-filter="activity"] .pf-album { display: flex; }
 .pf[data-filter="art"] .pf-album .pf-fig[data-kind="activity"],
 .pf[data-filter="activity"] .pf-album .pf-fig[data-kind="art"] { display: none; }
 .pf[data-filter="art"] .pf-works, .pf[data-filter="activity"] .pf-works,
@@ -360,9 +394,9 @@ export function getPortfolioTemplatesCss() {
 .pf-t-gallery .pf-filters { justify-content: center; }
 .pf-t-gallery .pf-works { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 40px 24px; }
 .pf-t-gallery .pf-work { grid-template-areas: "media" "head" "text"; gap: 10px; }
-.pf-t-gallery .pf-media { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.pf-t-gallery .pf-media .pf-fig:first-child { grid-column: 1 / -1; }
-.pf-t-gallery .pf-media.is-single { grid-template-columns: minmax(0, 1fr); }
+.pf-t-gallery .pf-media { gap: 6px; --row-h: 150px; }
+.pf-t-gallery .pf-media .pf-fig:first-child { flex-basis: 100%; }
+.pf-t-gallery .pf-media.n-1 { --row-h: 380px; }
 .pf-t-gallery .pf-fig img { border-radius: 4px; }
 .pf-t-gallery .pf-tag { background: none; color: var(--pf-accent); padding: 0; }
 .pf-t-gallery .pf-work-title { font-size: 18px; font-weight: 700; }
@@ -419,9 +453,7 @@ export function getPortfolioTemplatesCss() {
 .pf-t-mag-life .pf-filters { justify-content: center; }
 .pf-t-mag-life .pf-works { gap: 56px; }
 .pf-t-mag-life .pf-work { grid-template-areas: "media" "head" "text"; gap: 16px; }
-.pf-t-mag-life .pf-media .pf-fig:first-child { grid-column: 1 / -1; }
-.pf-t-mag-life .pf-media .pf-fig:first-child img { aspect-ratio: 16 / 9; }
-.pf-t-mag-life .pf-media.is-single .pf-fig img { aspect-ratio: auto; }
+.pf-t-mag-life .pf-work:not(.cover-portrait) .pf-media .pf-fig:first-child { flex: 1 1 100%; }
 .pf-t-mag-life .pf-tag { background: none; color: var(--pf-accent); padding: 0; letter-spacing: 0.1em; }
 .pf-t-mag-life .pf-work-title { font-size: clamp(22px, 3.6cqi, 30px); }
 .pf-t-mag-life .pf-text { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; align-items: start; }
@@ -452,7 +484,7 @@ export function getPortfolioTemplatesCss() {
 .pf-t-mag-book .pf-work { background: #FBF8F0; border: 1px solid var(--pf-line); border-radius: 10px; padding: clamp(18px, 3.5cqi, 32px); box-shadow: 0 8px 20px rgba(35, 31, 32, 0.06); }
 .pf-t-mag-book .pf-work.has-media { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "head media" "text media"; column-gap: 0; }
 .pf-t-mag-book .pf-work.has-media .pf-head, .pf-t-mag-book .pf-work.has-media .pf-text { padding-right: clamp(16px, 3cqi, 32px); }
-.pf-t-mag-book .pf-work.has-media .pf-media { border-left: 1px solid var(--pf-line); padding-left: clamp(16px, 3cqi, 32px); grid-template-columns: minmax(0, 1fr); align-content: start; }
+.pf-t-mag-book .pf-work.has-media .pf-media { border-left: 1px solid var(--pf-line); padding-left: clamp(16px, 3cqi, 32px); --row-h: 170px; }
 .pf-t-mag-book .pf-tag { background: none; color: var(--pf-accent); padding: 0; letter-spacing: 0.06em; }
 .pf-t-mag-book .pf-content::first-letter { float: left; font-family: var(--pf-title-font); font-size: 2.8em; line-height: 1; font-weight: 800; color: var(--pf-accent); margin: 4px 8px 0 0; }
 .pf-t-mag-book .pf-reflection { background: rgba(107, 29, 47, 0.07); }
@@ -538,9 +570,106 @@ export function getPortfolioTemplatesCss() {
 .pf-t-rainbow .pf-reflection strong::before { content: "⭐ "; }
 .pf-t-rainbow .pf-file { background: #FFFFFF; }
 
+/* ---------- 13. 뭉게구름 하늘 (귀여운) ---------- */
+.pf-t-cloud { --pf-bg: #DDF2FF; --pf-text: #2B4A6B; --pf-muted: #6E8BA8; --pf-accent: #4AA8F0; --pf-line: #BFE3FF; --pf-soft: #F0F9FF; --pf-title-font: 'Jua', 'Noto Sans KR', sans-serif; --pf-radius: 30px;
+  background-image: radial-gradient(ellipse 140px 60px at 12% 9%, #FFFFFF 98%, transparent 100%), radial-gradient(ellipse 90px 45px at 20% 6%, #FFFFFF 98%, transparent 100%),
+    radial-gradient(ellipse 160px 64px at 88% 40%, rgba(255,255,255,0.85) 98%, transparent 100%), radial-gradient(ellipse 120px 50px at 8% 78%, rgba(255,255,255,0.8) 98%, transparent 100%),
+    linear-gradient(180deg, #BDE7FF 0%, #E9F7FF 100%); }
+.pf-t-cloud .pf-cover { position: relative; text-align: center; background: #FFFFFF; border-radius: 60px; padding: 34px 24px 26px; box-shadow: 0 10px 0 #C9E9FF; margin-top: 30px; }
+.pf-t-cloud .pf-cover::before { content: ""; position: absolute; left: 18%; top: -34px; width: 110px; height: 80px; border-radius: 50%; background: #FFFFFF; box-shadow: 150px -6px 0 18px #FFFFFF, 330px 4px 0 2px #FFFFFF; z-index: 0; }
+.pf-t-cloud .pf-cover > * { position: relative; z-index: 1; }
+.pf-t-cloud .pf-cover::after { content: "☀️"; position: absolute; right: 20px; top: -22px; font-size: 40px; z-index: 2; }
+.pf-t-cloud .pf-title { font-weight: 400; color: #2F8FDB; }
+.pf-t-cloud .pf-intro { margin-inline: auto; }
+.pf-t-cloud .pf-filters { justify-content: center; }
+.pf-t-cloud .pf-filters button { background: #FFFFFF; border: 2px solid #BFE3FF; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 15px; }
+.pf-t-cloud .pf-works { gap: 30px; }
+.pf-t-cloud .pf-work { background: #FFFFFF; border-radius: 40px; padding: 24px 26px; box-shadow: 0 8px 0 #C9E9FF, 0 14px 30px rgba(74, 168, 240, 0.15); }
+.pf-t-cloud .pf-tag { background: #4AA8F0; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; }
+.pf-t-cloud .pf-tag::before { content: "☁️ "; }
+.pf-t-cloud .pf-work-title { font-weight: 400; font-size: clamp(21px, 3.4cqi, 27px); }
+.pf-t-cloud .pf-fig img { border-radius: 22px; }
+.pf-t-cloud .pf-reflection { border-left: 0; border-radius: 24px; background: #FFF6CC; }
+.pf-t-cloud .pf-reflection strong { color: #E0A100; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; }
+.pf-t-cloud .pf-reflection strong::before { content: "☀️ "; }
+
+/* ---------- 14. 곰돌이 친구들 (귀여운) ---------- */
+.pf-t-bear { --pf-bg: #FFF6EA; --pf-text: #5A3E2B; --pf-muted: #9A7B62; --pf-accent: #C08A5B; --pf-line: #E8C9A0; --pf-soft: #FFF0D6; --pf-title-font: 'Jua', 'Noto Sans KR', sans-serif; --pf-radius: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='%23EBD3B5'%3E%3Cellipse cx='32' cy='40' rx='11' ry='9'/%3E%3Ccircle cx='19' cy='27' r='5'/%3E%3Ccircle cx='28' cy='21' r='5'/%3E%3Ccircle cx='37' cy='21' r='5'/%3E%3Ccircle cx='46' cy='27' r='5'/%3E%3C/g%3E%3C/svg%3E"); background-size: 64px 64px; }
+.pf-t-bear .pf-cover, .pf-t-bear .pf-work { position: relative; background: #FFFFFF; border: 3px solid #E8C9A0; border-radius: 30px; }
+.pf-t-bear .pf-cover { text-align: center; padding: 28px 22px 24px; margin-top: 26px; }
+.pf-t-bear .pf-cover::before, .pf-t-bear .pf-cover::after, .pf-t-bear .pf-work::before, .pf-t-bear .pf-work::after {
+  content: ""; position: absolute; top: -22px; width: 46px; height: 46px; border-radius: 50%; border: 3px solid #E8C9A0; background: radial-gradient(circle, #F6C9B4 0 38%, #C08A5B 40%); z-index: -1; }
+.pf-t-bear .pf-cover::before, .pf-t-bear .pf-work::before { left: 22px; }
+.pf-t-bear .pf-cover::after, .pf-t-bear .pf-work::after { right: 22px; }
+/* 귀(::before/::after)가 카드 뒤에 깔리도록 부모에서 쌓임 맥락을 만듭니다 */
+.pf-t-bear, .pf-t-bear .pf-works { isolation: isolate; }
+.pf-t-bear .pf-title { font-weight: 400; color: #8A5A34; }
+.pf-t-bear .pf-title::before { content: "🐻 "; }
+.pf-t-bear .pf-intro { margin-inline: auto; }
+.pf-t-bear .pf-filters { justify-content: center; }
+.pf-t-bear .pf-filters button { background: #FFFFFF; border: 2px solid #E8C9A0; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 15px; }
+.pf-t-bear .pf-filters button.is-on { background: #C08A5B; border-color: #C08A5B; }
+.pf-t-bear .pf-works { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 44px 24px; padding-top: 18px; }
+.pf-t-bear .pf-work { padding: 22px; }
+.pf-t-bear .pf-tag { background: #C08A5B; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; }
+.pf-t-bear .pf-tag::before { content: "🐾 "; }
+.pf-t-bear .pf-work-title { font-weight: 400; font-size: clamp(20px, 3.2cqi, 25px); }
+.pf-t-bear .pf-fig img { border-radius: 20px; border: 3px solid #F3E2CC; }
+.pf-t-bear .pf-reflection { border-left: 0; border-radius: 20px; background: #FFE8B0; }
+.pf-t-bear .pf-reflection strong { color: #A86B1E; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; }
+.pf-t-bear .pf-reflection strong::before { content: "🍯 "; }
+
+/* ---------- 15. 반짝 우주 탐험 (귀여운) ---------- */
+.pf-t-space { --pf-bg: #1B1E4B; --pf-text: #F4F1FF; --pf-muted: #B9B4E6; --pf-accent: #FFE66D; --pf-on-accent: #1B1E4B; --pf-line: rgba(255, 255, 255, 0.22); --pf-soft: rgba(255, 255, 255, 0.08); --pf-card: #2A2E66; --pf-title-font: 'Jua', 'Noto Sans KR', sans-serif; --pf-radius: 26px;
+  background-image: radial-gradient(1.6px 1.6px at 20px 30px, #FFFFFF 99%, transparent), radial-gradient(1.2px 1.2px at 90px 120px, #FFF6B0 99%, transparent),
+    radial-gradient(2px 2px at 160px 60px, #FFFFFF 99%, transparent), radial-gradient(1px 1px at 60px 170px, #C9C2FF 99%, transparent),
+    radial-gradient(circle at 85% 8%, rgba(255, 126, 200, 0.25), transparent 30%), radial-gradient(circle at 5% 60%, rgba(120, 200, 255, 0.18), transparent 35%);
+  background-size: 200px 200px, 200px 200px, 200px 200px, 200px 200px, 100% 100%, 100% 100%; }
+.pf-t-space .pf-cover { text-align: center; padding: 26px 16px; }
+.pf-t-space .pf-cover::before { content: "🚀  🪐  ⭐"; display: block; font-size: 30px; letter-spacing: 4px; margin-bottom: 6px; }
+.pf-t-space .pf-title { font-weight: 400; background: linear-gradient(90deg, #FFE66D, #FF9ED8, #9BD8FF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.pf-t-space .pf-intro { margin-inline: auto; }
+.pf-t-space .pf-filters { justify-content: center; }
+.pf-t-space .pf-filters button { font-family: 'Jua', sans-serif; font-weight: 400; font-size: 15px; }
+.pf-t-space .pf-works { gap: 26px; }
+.pf-t-space .pf-work { background: rgba(255, 255, 255, 0.07); border: 2px solid rgba(255, 255, 255, 0.18); border-radius: 26px; padding: 24px; box-shadow: 0 0 30px rgba(155, 216, 255, 0.12); }
+.pf-t-space .pf-tag { font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; }
+.pf-t-space .pf-tag::before { content: "✨ "; }
+.pf-t-space .pf-project { color: #9BD8FF; }
+.pf-t-space .pf-work-title { font-weight: 400; font-size: clamp(21px, 3.4cqi, 27px); }
+.pf-t-space .pf-role b { color: #F4F1FF; }
+.pf-t-space .pf-fig img { border-radius: 18px; }
+.pf-t-space .pf-reflection { border-left: 0; border-radius: 18px; background: rgba(255, 158, 216, 0.14); border: 1px solid rgba(255, 158, 216, 0.4); }
+.pf-t-space .pf-reflection strong { color: #FF9ED8; font-family: 'Jua', sans-serif; font-weight: 400; font-size: 14px; }
+.pf-t-space .pf-reflection strong::before { content: "🌙 "; }
+
+/* ---------- 사진이 세로형이면: 넓은 카드에서는 사진과 글을 나란히 (여백 줄이기) ---------- */
+.pf-t-editorial .pf-work:first-child.portrait-set.has-text,
+.pf-t-timeline .pf-work.portrait-set.has-text,
+.pf-t-academic .pf-work.portrait-set.has-text,
+.pf-t-showcase .pf-work.portrait-set.has-text,
+.pf-t-mag-life .pf-work.portrait-set.has-text,
+.pf-t-cloud .pf-work.portrait-set.has-text,
+.pf-t-space .pf-work.portrait-set.has-text,
+.pf-t-pastel .pf-work:last-child:nth-child(odd).portrait-set.has-text,
+.pf-t-rainbow .pf-work:last-child:nth-child(odd).portrait-set.has-text,
+.pf-t-bear .pf-work:last-child:nth-child(odd).portrait-set.has-text,
+.pf-t-scrapbook .pf-work:last-child:nth-child(odd).portrait-set.has-text,
+.pf-t-mag-zine .pf-work:last-child:nth-child(odd).portrait-set.has-text {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); grid-template-areas: "head head" "media text"; column-gap: 26px; align-items: start;
+}
+.pf .pf-work.portrait-set.has-text .pf-media.n-many { --row-h: 160px; }
+.pf .pf-work.portrait-set.has-text .pf-media.n-1 { --row-h: 460px; }
+.pf-t-academic .pf-work.portrait-set.has-text .pf-text,
+.pf-t-mag-life .pf-work.portrait-set.has-text .pf-text { grid-template-columns: minmax(0, 1fr); }
+/* 크레파스 그림일기: 대표 사진이 가로면 사진을 위에 넓게 */
+.pf-t-crayon .pf-work.has-media.cover-landscape { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "media" "text"; }
+
 /* ---------- 2단 배치에서 마지막 카드가 혼자 남으면 가로 전체 사용 ---------- */
 .pf-t-pastel .pf-work:last-child:nth-child(odd),
 .pf-t-rainbow .pf-work:last-child:nth-child(odd),
+.pf-t-bear .pf-work:last-child:nth-child(odd),
 .pf-t-scrapbook .pf-work:last-child:nth-child(odd),
 .pf-t-mag-zine .pf-work:last-child:nth-child(odd),
 .pf-t-editorial .pf-work:last-child:nth-child(even) { grid-column: 1 / -1; }
@@ -551,6 +680,9 @@ export function getPortfolioTemplatesCss() {
   .pf .pf-work, .pf .pf-work.has-media, .pf .pf-work:first-child.has-media { grid-template-columns: minmax(0, 1fr) !important; grid-template-areas: "head" "media" "text" !important; }
   .pf-t-gallery .pf-work, .pf-t-mag-life .pf-work { grid-template-areas: "media" "head" "text" !important; }
   .pf .pf-text { grid-template-columns: minmax(0, 1fr) !important; }
+  .pf .pf-media, .pf .pf-work .pf-media { --row-h: 150px !important; }
+  .pf .pf-media.n-2 { --row-h: 200px !important; }
+  .pf .pf-media.n-1 { --row-h: 340px !important; }
   .pf-t-mag-book .pf-work.has-media .pf-head, .pf-t-mag-book .pf-work.has-media .pf-text { padding-right: 0; }
   .pf-t-mag-book .pf-work.has-media .pf-media { border-left: 0; padding-left: 0; }
   .pf-t-scrapbook .pf-work { transform: none !important; }
@@ -570,6 +702,9 @@ export function getPortfolioTemplatesCss() {
   .pf-t-timeline .pf-cover { margin: 0 0 24px; border-radius: 12px; }
   .pf-t-showcase { --pf-bg: #FFFFFF; --pf-text: #18181B; --pf-muted: #52525B; --pf-soft: #F4F4F5; --pf-line: #D4D4D8; --pf-on-accent: #FFFFFF; --pf-accent: #0F766E; }
   .pf-t-showcase .pf-reflection { background: #F4F4F5; }
+  .pf-t-space { --pf-bg: #FFFFFF; --pf-text: #1B1E4B; --pf-muted: #55597A; --pf-accent: #5B4BC4; --pf-on-accent: #FFFFFF; --pf-line: #D6D3F0; --pf-soft: #F3F1FF; --pf-card: #FFFFFF; background-image: none; }
+  .pf-t-space .pf-title { background: none; color: #5B4BC4; }
+  .pf-t-space .pf-work { background: #FFFFFF; border-color: #D6D3F0; box-shadow: none; }
 }
 `;
 }
@@ -580,7 +715,7 @@ export function getPortfolioTemplatesCss() {
    ===================================================================== */
 export function renderPrintDocumentHtml(state, { assetMap = null } = {}) {
   const tpl = getTemplateMeta(state?.selectedTemplate);
-  const accent = tpl.id === 'showcase' ? '#0F766E' : tpl.colors.accent;
+  const accent = tpl.colors.printAccent || (tpl.id === 'showcase' ? '#0F766E' : tpl.colors.accent);
   const p = state?.profile || {};
   const works = Array.isArray(state?.works) ? state.works : [];
 
@@ -606,7 +741,7 @@ export function renderPrintDocumentHtml(state, { assetMap = null } = {}) {
     .map((w, i) => {
       const photos = getWorkPhotos(w);
       const media = photos.length
-        ? `<div class="pdoc-media${photos.length === 1 ? ' is-single' : ''}">${photos
+        ? `<div class="pdoc-media ${mediaCountClass(photos.length)}">${photos
             .map((ph) => renderFigure(ph, resolveSrc(ph, ph.bucket, assetMap), w.title))
             .join('')}</div>`
         : '';
@@ -667,11 +802,15 @@ export function getPrintDocumentCss() {
 .pdoc-num { font-size: 22px; font-weight: 800; color: var(--pdoc-accent); line-height: 1.2; }
 .pdoc-meta { font-size: 12.5px; color: #64748B; }
 .pdoc-work h2 { font-size: 18px; line-height: 1.4; }
-.pdoc-media { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
-.pdoc-media.is-single { grid-template-columns: minmax(0, 1fr); }
-.pdoc-media img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
-.pdoc-media.is-single img { aspect-ratio: auto; max-height: 300px; object-fit: contain; background: #F8FAFC; }
-.pdoc-media figure { position: relative; }
+.pdoc-media { --row-h: 140px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin: 10px 0; }
+.pdoc-media::after { content: ""; flex: 2 1 0; }
+.pdoc-media.n-2, .pdoc-media.n-3 { --row-h: 60px; }
+.pdoc-media.n-2::after, .pdoc-media.n-3::after { display: none; }
+.pdoc-media.n-1 { --row-h: 280px; justify-content: center; }
+.pdoc-media.n-1::after { display: none; }
+.pdoc-media figure { position: relative; flex: var(--r, 1.333) 1 calc(var(--r, 1.333) * var(--row-h)); min-width: 0; max-width: 100%; break-inside: avoid; }
+.pdoc-media.n-1 figure { flex: 0 1 calc(var(--r, 1.333) * var(--row-h)); }
+.pdoc-media img { display: block; width: 100%; height: auto; aspect-ratio: var(--r, 1.333); object-fit: cover; border-radius: 6px; }
 .pdoc-media figure::before { position: absolute; top: 6px; left: 6px; padding: 0 6px; border-radius: 999px; background: rgba(255,255,255,0.9); font-size: 10.5px; font-weight: 700; color: #334155; }
 .pdoc-media figure[data-kind="art"]::before { content: "작품"; }
 .pdoc-media figure[data-kind="activity"]::before { content: "활동"; }

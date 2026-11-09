@@ -46,7 +46,13 @@ export function currentSchoolTerm(date = new Date()) {
 }
 
 function normalizeMedia(list, prefix) {
-  return arr(list).map((m) => ({ ...m, id: str(m.id) || uid(prefix), name: str(m.name), dataUrl: str(m.dataUrl) }));
+  return arr(list).map((m) => ({
+    ...m,
+    id: str(m.id) || uid(prefix),
+    name: str(m.name),
+    dataUrl: str(m.dataUrl),
+    ...(m.width > 0 && m.height > 0 ? { width: Number(m.width), height: Number(m.height) } : {})
+  }));
 }
 
 export function normalizeWork(w = {}) {
