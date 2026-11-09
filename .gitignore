@@ -23,3 +23,4 @@ dist-single
 *.njsproj
 *.sln
 *.sw?
+.wrangler

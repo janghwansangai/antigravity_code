@@ -22,9 +22,12 @@
 - **🖨️ PDF** — A4 문서. 인쇄 창에서 ‘PDF로 저장’.
 - **📦 ZIP** — `index.html` + `assets/photos/` + `assets/files/` + `project-backup.json`
 
-### 배포 (Cloudflare Pages · GitHub 연결)
+### 배포 (Cloudflare · GitHub 연결)
 
-Cloudflare 대시보드 → **Workers & Pages** → 만들기 → **Pages** → Git 저장소 가져오기 → `janghwansangai/antigravity_code`
+Cloudflare 대시보드 → **Workers & Pages** → 만들기 → Git 저장소 가져오기 → `janghwansangai/antigravity_code`
+
+- **Workers로 만든 경우**(배포 명령 `npx wrangler deploy` 칸이 있는 화면): 저장소의 `wrangler.jsonc`가 빌드와 `dist/` 업로드를 처리하므로 기본값 그대로 두면 됩니다. 주소는 `https://<이름>.<계정>.workers.dev`
+- **Pages로 만든 경우**: 아래 값을 입력합니다. 주소는 `https://<이름>.pages.dev`
 
 | 설정 | 값 |
 | --- | --- |

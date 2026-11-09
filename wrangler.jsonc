@@ -1,0 +1,10 @@
+// Cloudflare Workers 배포 설정 (대시보드에서 GitHub 저장소를 Workers로 연결했을 때 사용)
+// - 배포 명령 `npx wrangler deploy`가 먼저 `npm run build`를 실행하고 dist/ 폴더를 올립니다.
+// - name은 대시보드의 Worker 이름과 달라도 Cloudflare 빌드가 자동으로 맞춰 줍니다.
+// - 서버 코드 없이 정적 파일만 올리는 사이트입니다(학생 자료는 서버로 가지 않음).
+{
+  "name": "my-portfolio-maker",
+  "compatibility_date": "2026-11-01",
+  "build": { "command": "npm run build" },
+  "assets": { "directory": "./dist" }
+}
