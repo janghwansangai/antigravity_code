@@ -20,6 +20,7 @@ import {
   DEFAULT_TEMPLATE_ID
 } from '../data/sampleData.js';
 import { uid, DEFAULT_PHOTO_SIDE, PHOTO_SIZES } from '../utils/files.js';
+import { DEFAULT_VIDEO_SIDE, VIDEO_SIZES } from '../utils/videoCompress.js';
 import { walkMedia, hasData, stripState } from '../media/model.js';
 
 const DB_NAME = 'StudentPortfolioBuilderDB_v2';
@@ -115,7 +116,12 @@ export function normalizeState(raw) {
   if (!Array.isArray(state.customProjects)) state.customProjects = [];
   state.isSample = Boolean(raw.isSample);
   const side = Number(raw.settings?.photoMaxSide);
-  state.settings = { photoMaxSide: PHOTO_SIZES.some((x) => x.value === side) ? side : DEFAULT_PHOTO_SIDE };
+  const vside = raw.settings?.videoMaxSide == null ? NaN : Number(raw.settings.videoMaxSide);
+  state.settings = {
+    photoMaxSide: PHOTO_SIZES.some((x) => x.value === side) ? side : DEFAULT_PHOTO_SIDE,
+    // 예전 자료엔 없음 → 앞으로 올릴 동영상만 '보통'으로 줄임 (이미 올린 동영상은 그대로)
+    videoMaxSide: VIDEO_SIZES.some((x) => x.value === vside) ? vside : DEFAULT_VIDEO_SIDE
+  };
   return state;
 }
 
@@ -470,6 +476,12 @@ class PortfolioStore {
   setTemplate(templateId) {
     if (!DESIGN_TEMPLATES.some((t) => t.id === templateId)) return;
     this.state.selectedTemplate = templateId;
+    this.changed();
+  }
+
+  setVideoMaxSide(side) {
+    if (!VIDEO_SIZES.some((x) => x.value === side)) return;
+    this.state.settings = { ...this.state.settings, videoMaxSide: side };
     this.changed();
   }
 

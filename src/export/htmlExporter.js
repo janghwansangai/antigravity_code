@@ -75,7 +75,7 @@ const SINGLE_FILE_TOTAL_LIMIT = 50 * 1024 * 1024;
  * 사진·PDF·동영상을 페이지 안에 넣을 data URL 주소표를 만듭니다.
  * 너무 큰 동영상·첨부파일은 빼고, 뺀 것의 이름을 돌려줍니다.
  */
-async function buildInlineAssetMap(state) {
+async function buildInlineAssetMap(state, { itemLimit = SINGLE_FILE_ITEM_LIMIT, totalLimit = SINGLE_FILE_TOTAL_LIMIT } = {}) {
   const assetMap = {};
   const skipped = [];
   const items = [];
@@ -86,7 +86,7 @@ async function buildInlineAssetMap(state) {
   for (const { m, bucket } of items) {
     const size = mediaBytes(m);
     const big = bucket === 'videos' || bucket === 'attachments';
-    if (big && (size > SINGLE_FILE_ITEM_LIMIT || total + size > SINGLE_FILE_TOTAL_LIMIT)) {
+    if (big && (size > itemLimit || total + size > totalLimit)) {
       skipped.push(m.name || '파일');
       continue;
     }
@@ -96,10 +96,15 @@ async function buildInlineAssetMap(state) {
   return { assetMap, skipped };
 }
 
+/** 사진·PDF·동영상을 품은 웹페이지 한 장(문자열) → { html, skipped } (갤러리의 📖 보기에서도 씀) */
+export async function buildSingleHtmlString(state, limits) {
+  const { assetMap, skipped } = await buildInlineAssetMap(state, limits);
+  return { html: buildStandaloneHtml(state, { assetMap }), skipped };
+}
+
 /** 사진·PDF·동영상을 모두 품은 .html 파일 하나를 내려받습니다. → { fileName, skipped } */
 export async function exportSingleHtmlFile(state) {
-  const { assetMap, skipped } = await buildInlineAssetMap(state);
-  const html = buildStandaloneHtml(state, { assetMap });
+  const { html, skipped } = await buildSingleHtmlString(state);
   const fileName = `${portfolioFileBaseName(state)}.html`;
   triggerBlobDownload(new Blob([html], { type: 'text/html;charset=utf-8' }), fileName);
   return { fileName, skipped };

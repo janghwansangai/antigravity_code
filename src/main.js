@@ -31,6 +31,7 @@ import { PHOTO_SIZES, dataUrlToBlob, formatBytes, getImageSize, isImageFile, rot
 import { openPhotoEditor } from './editor/photoEditor.js';
 import { openCamera } from './editor/camera.js';
 import { ingestFiles, estimateStoredBytes } from './media/ingest.js';
+import { VIDEO_SIZES, DEFAULT_VIDEO_SIDE, canCompressVideo, compressVideo, renameForType } from './utils/videoCompress.js';
 import { mediaMime, totalMediaBytes, walkMedia } from './media/model.js';
 import { PROJECT_EXT, canSaveInPlace, readProjectFile, saveProjectFile, savedFileName } from './project/projectFile.js';
 
@@ -509,6 +510,12 @@ function workDetailHtml(state, w) {
           PHOTO_SIZES.map((x) => [String(x.value), x.label]),
           '사진 화질'
         )}</label>
+        <label class="field"><span class="field-label">새로 올릴 동영상 크기</span>${selectBox(
+          'settings.videoMaxSide',
+          String(state.settings.videoMaxSide),
+          VIDEO_SIZES.map((x) => [String(x.value), x.label]),
+          '동영상 크기'
+        )}</label>
       </div>
       <p class="upload-help">끌어다 놓기 · 여러 개 한꺼번에 · 캡처한 화면은 Ctrl+V(맥 ⌘+V)로 바로 붙여넣기<br />방향은 <b>↻</b>, 필요한 부분만 <b>✂️</b>, 얼굴 가리기·문서 반듯하게는 <b>✏️ 고치기</b></p>
       ${ui.uploading ? `<p class="uploading" data-upload-status>⏳ 올리는 중… 잠깐만 기다려 주세요</p>` : ''}
@@ -561,6 +568,25 @@ function exportItemHtml(action, icon, title, desc, primary = false) {
     </button>`;
 }
 
+/** 우리 반 갤러리(gallery.html): 이 브라우저에서 마지막으로 연 학급 갤러리가 있으면 그 주소로 */
+function galleryItemHtml() {
+  let last = '';
+  try {
+    last = JSON.parse(localStorage.getItem('gallery:last') || '""');
+  } catch {
+    last = '';
+  }
+  const ok = typeof last === 'string' && last.startsWith(`${location.origin}/`) && last.includes('#s=');
+  const href = ok ? last : './gallery.html';
+  const desc = ok
+    ? '학급 구글 드라이브에 올린 작품 링크를 모아 보는 곳이에요. ZIP·웹페이지·프로젝트 파일은 갤러리에서 바로 펼쳐 볼 수 있어요.'
+    : '선생님이 알려 준 갤러리 주소(또는 QR)로 들어가 드라이브 링크를 올려요. 선생님은 여기를 눌러 갤러리를 만들 수 있어요.';
+  return `<a class="export-item" href="${esc(href)}" target="_blank" rel="noopener">
+      <span class="export-icon" aria-hidden="true">🌈</span>
+      <span class="export-text"><b>${ok ? '우리 반 갤러리 열기 ↗' : '우리 반 갤러리 (드라이브 링크 모으기) ↗'}</b><small>${desc}</small></span>
+    </a>`;
+}
+
 function designStepHtml(state) {
   const tpl = getTemplateMeta(state.selectedTemplate);
   const cute = DESIGN_TEMPLATES.filter((t) => t.group === 'cute');
@@ -602,11 +628,23 @@ function designStepHtml(state) {
       </label>
     </div>
 
+    <h3 class="sub-title">🌈 우리 반 갤러리</h3>
+    <div class="export-list">
+      ${galleryItemHtml()}
+    </div>
+
     <h3 class="sub-title">📦 저장 공간</h3>
     <div class="storage-box">
       <p id="storage-info" class="pane-hint">계산 중…</p>
-      <button type="button" class="btn btn-sm" data-action="shrink-photos">🗜️ 사진 용량 줄이기 (긴 변 1280px로)</button>
-      <p class="pane-hint small">사진이 많아 무거우면 눌러 보세요. 동영상·PDF 원본은 그대로예요.</p>
+      <div class="storage-actions">
+        <button type="button" class="btn btn-sm" data-action="shrink-photos">🗜️ 사진 용량 줄이기 (긴 변 1280px로)</button>
+        <button type="button" class="btn btn-sm" data-action="shrink-videos"${canCompressVideo() ? '' : ' disabled'}>🎬 동영상 용량 줄이기</button>
+      </div>
+      <p class="pane-hint small">${
+        canCompressVideo()
+          ? '휴대폰으로 옮기거나 친구에게 보낼 때 가벼워져요. 동영상은 ‘새로 올릴 동영상 크기’(없으면 720p)에 맞춰 MP4로 줄여요. PDF 원본은 그대로예요.'
+          : '사진이 많아 무거우면 눌러 보세요. (이 브라우저는 동영상 줄이기를 못 해요. 크롬·엣지·웨일·최신 사파리에서 해 주세요.)'
+      }</p>
     </div>
 
     <div class="danger-row">
@@ -968,7 +1006,8 @@ async function addFilesToWork(workId, fileList, kind = 'art') {
   const files = Array.from(fileList || []);
   if (!files.length || !workId) return;
   const bucket = kind === 'activity' ? 'activityPhotos' : 'images';
-  const need = estimateStoredBytes(files);
+  const videoSide = canCompressVideo() ? store.getState().settings.videoMaxSide : 0;
+  const need = estimateStoredBytes(files, { videoSide });
   if (!(await store.hasRoomFor(need))) {
     toast(`⚠️ 이 컴퓨터 브라우저의 저장 공간이 부족해요(${formatBytes(need)} 필요). ‘사진 용량 줄이기’를 하거나 프로젝트 파일로 저장한 뒤 정리해 주세요.`, {
       duration: 9000
@@ -987,11 +1026,11 @@ async function addFilesToWork(workId, fileList, kind = 'art') {
 
   let result;
   try {
-    result = await ingestFiles(files, { maxSide: store.getState().settings.photoMaxSide, onProgress: status });
+    result = await ingestFiles(files, { maxSide: store.getState().settings.photoMaxSide, videoSide, onProgress: status });
   } finally {
     ui.uploading--;
   }
-  const { photos, videos, attachments, problems } = result;
+  const { photos, videos, attachments, problems, notes } = result;
   const w = store.getWork(workId);
   if (!w) return;
   store.updateWork(workId, {
@@ -999,6 +1038,7 @@ async function addFilesToWork(workId, fileList, kind = 'art') {
     videos: [...w.videos, ...videos],
     attachments: [...w.attachments, ...attachments]
   });
+  if (videos.length) store.flush(); // 오래 걸린 동영상은 바로 저장
   if (ui.editingId === workId) renderEditor();
   schedulePreview();
 
@@ -1008,10 +1048,11 @@ async function addFilesToWork(workId, fileList, kind = 'art') {
     videos.length && `동영상 ${videos.length}개`,
     attachments.length && `파일 ${attachments.length}개`
   ].filter(Boolean);
+  const shrunk = notes.length ? ` 🎬 동영상을 줄였어요: ${notes.join(', ')}` : '';
   if (problems.length) {
-    toast(`${done.length ? `올렸어요: ${done.join(' · ')}. ` : ''}${problems.join(' ')}`, { duration: 8000 });
+    toast(`${done.length ? `올렸어요: ${done.join(' · ')}. ` : ''}${problems.join(' ')}${shrunk}`, { duration: 9000 });
   } else if (done.length) {
-    toast(`🎉 올렸어요! ${done.join(' · ')}`);
+    toast(`🎉 올렸어요! ${done.join(' · ')}${shrunk}`, { duration: shrunk ? 7000 : 3500 });
   } else {
     toast('올린 파일이 없어요.');
   }
@@ -1092,9 +1133,57 @@ async function shrinkAllPhotos(button) {
   } finally {
     button.disabled = false;
   }
+  await store.flush();
   renderPreview();
   updateStorageInfo();
   toast(changed ? `🗜️ 사진 ${changed}장을 줄여 ${formatBytes(saved)}를 아꼈어요.` : '이미 충분히 가벼워요.', { duration: 5000 });
+}
+
+/* ---------- 동영상 용량 줄이기 ---------- */
+async function shrinkAllVideos(button) {
+  const side = store.getState().settings.videoMaxSide || DEFAULT_VIDEO_SIDE;
+  const targets = [];
+  store.getState().works.forEach((w) => w.videos.forEach((v) => v.blob && targets.push({ w: w.id, v })));
+  if (!targets.length) return toast('줄일 동영상이 없어요.');
+  if (!confirm(`동영상 ${targets.length}개를 ${side}p MP4로 줄여 다시 저장할까요?\n휴대폰·태블릿에서 보기에 충분한 화질이에요. 되돌릴 수는 없어요.\n(동영상이 길면 몇 분 걸릴 수 있어요)`)) return;
+  let saved = 0;
+  let changed = 0;
+  button.disabled = true;
+  try {
+    for (const [i, { w, v }] of targets.entries()) {
+      const label = `동영상 줄이는 중… (${i + 1}/${targets.length})`;
+      toast(label, { sticky: true });
+      const r = await compressVideo(v.blob, { shortSide: side, onProgress: (x) => toast(`${label} ${Math.round(x * 100)}%`, { sticky: true }) }).catch((err) => {
+        console.warn(err);
+        return null;
+      });
+      if (!r) continue;
+      saved += v.blob.size - r.blob.size;
+      changed++;
+      replaceVideo(w, v.id, r);
+    }
+  } finally {
+    button.disabled = false;
+  }
+  await store.flush(); // 오래 걸린 작업이라 바로 저장(새로 고침·창 닫기 대비)
+  renderPreview();
+  updateStorageInfo();
+  toast(changed ? `🎬 동영상 ${changed}개를 줄여 ${formatBytes(saved)}를 아꼈어요.` : '이미 충분히 가볍거나, 이 동영상은 줄일 수 없어요.', { duration: 5000 });
+}
+
+function replaceVideo(workId, videoId, r) {
+  const w = store.getWork(workId);
+  if (!w) return;
+  const newId = uid('vid');
+  store.markEdited();
+  store.updateWork(workId, {
+    videos: w.videos.map((v) =>
+      v.id === videoId
+        ? { ...v, id: newId, blob: r.blob, dataUrl: '', mimeType: r.mimeType, name: renameForType(v.name || '동영상', r.mimeType), size: formatBytes(r.blob.size), width: r.width, height: r.height }
+        : v
+    ),
+    coverPhotoId: w.coverPhotoId === videoId ? newId : w.coverPhotoId
+  });
 }
 
 async function updateStorageInfo() {
@@ -1250,6 +1339,9 @@ async function onClick(e) {
     case 'shrink-photos':
       await shrinkAllPhotos(el);
       break;
+    case 'shrink-videos':
+      await shrinkAllVideos(el);
+      break;
     case 'save-project':
       await saveProject(el, false);
       break;
@@ -1376,6 +1468,15 @@ function onInput(e) {
     } else if (key === 'settings.photoMaxSide') {
       store.setPhotoMaxSide(Number(t.value));
       toast('앞으로 올리는 사진에 적용돼요. 이미 올린 사진은 그대로예요.');
+      return;
+    } else if (key === 'settings.videoMaxSide') {
+      store.setVideoMaxSide(Number(t.value));
+      toast(
+        Number(t.value)
+          ? '앞으로 올리는 동영상을 줄여서 저장해요. 이미 올린 동영상은 ‘저장 공간’의 🎬 버튼으로 줄일 수 있어요.'
+          : '앞으로 올리는 동영상은 원본 그대로 저장해요(용량이 커요).',
+        { duration: 5000 }
+      );
       return;
     }
     schedulePreview(150);
