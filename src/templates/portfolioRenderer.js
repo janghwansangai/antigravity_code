@@ -136,7 +136,12 @@ export function photoShape(photo) {
   return { ratio: Math.min(Math.max(r, 0.3), 4), shape: r > 1.15 ? 'landscape' : r < 0.87 ? 'portrait' : 'square' };
 }
 
-function renderFigure(photo, src, altFallback, extraCaption = '', { assetMap = null, stillVideo = false } = {}) {
+/**
+ * 사진·동영상 한 칸
+ *   ref: true면 데이터를 다시 넣지 않고 같은 사진(data-pf-id)을 가리키기만 합니다(data-pf-same).
+ *        '사진 모아 보기'처럼 같은 사진이 두 번 나오는 곳에서 파일 크기를 줄입니다(화면에서 runtime이 채움).
+ */
+function renderFigure(photo, src, altFallback, extraCaption = '', { assetMap = null, stillVideo = false, ref = false } = {}) {
   const caption = String(photo.caption || '').trim();
   const alt = caption || altFallback || '활동 사진';
   const { ratio, shape } = photoShape(photo);
@@ -144,25 +149,34 @@ function renderFigure(photo, src, altFallback, extraCaption = '', { assetMap = n
   const kind = photo.kind === 'video' ? 'video' : photo.kind === 'activity' ? 'activity' : 'art';
   let body;
   let note = '';
+  const pid = escapeHtml(photo.poster?.id || '');
+  const id = escapeHtml(photo.id || '');
+  let still = false;
   if (kind === 'video') {
-    // 동영상: 화면에서는 재생, 인쇄·PDF에서는 썸네일 그림
+    // 동영상: 화면에서는 재생, 인쇄·PDF에서는 썸네일 그림 (썸네일 데이터는 한 번만 넣음)
     const poster = escapeUrl(resolveSrc(photo.poster, assetMap));
-    const posterImg = `<img class="pf-video-poster" src="${poster}" alt="${escapeHtml(alt)} (동영상)"${size} />`;
-    if (stillVideo || !src) {
-      body = posterImg;
+    const posterAlt = `alt="${escapeHtml(alt)} (동영상)"${size}`;
+    if (ref) {
+      still = true;
+      body = `<img class="pf-video-poster" data-pf-same="${pid}" ${posterAlt} />`;
+    } else if (stillVideo || !src) {
+      still = true;
+      body = `<img class="pf-video-poster" src="${poster}" data-pf-id="${pid}" ${posterAlt} />`;
       if (!stillVideo) note = '동영상은 용량이 커서 이 파일에는 썸네일만 넣었어요(ZIP 파일에 원본이 있어요).';
     } else {
-      body = `<video src="${escapeUrl(src)}" poster="${poster}" controls playsinline preload="metadata"${size}></video>${posterImg}`;
+      body = `<video src="${escapeUrl(src)}" poster="${poster}" data-pf-id="${pid}" controls playsinline preload="metadata"${size}></video><img class="pf-video-poster" data-pf-same="${pid}" ${posterAlt} />`;
     }
+  } else if (ref) {
+    body = `<img data-pf-same="${id}" alt="${escapeHtml(alt)}"${size} />`;
   } else {
-    body = `<img src="${escapeUrl(src)}" alt="${escapeHtml(alt)}"${size} />`;
+    body = `<img src="${escapeUrl(src)}" data-pf-id="${id}" alt="${escapeHtml(alt)}"${size} />`;
   }
   const capText = [caption, note].filter(Boolean).join(' ');
   const figcaption =
     capText || extraCaption
       ? `<figcaption>${escapeHtml(capText)}${extraCaption ? `<small>${escapeHtml(extraCaption)}</small>` : ''}</figcaption>`
       : '';
-  const cls = kind === 'video' ? `pf-fig pf-video${stillVideo || !src ? ' is-still' : ''}` : 'pf-fig';
+  const cls = kind === 'video' ? `pf-fig pf-video${still ? ' is-still' : ''}` : 'pf-fig';
   return `<figure class="${cls}" data-kind="${kind}" data-shape="${shape}" style="--r:${ratio.toFixed(3)}">${body}${figcaption}</figure>`;
 }
 
@@ -300,7 +314,7 @@ function renderAlbum(works, assetMap) {
   const figures = [];
   works.forEach((w) => {
     getWorkVisuals(w).forEach((p) => {
-      figures.push(renderFigure(p, resolveSrc(p, assetMap), w.title, w.title || '', { assetMap }));
+      figures.push(renderFigure(p, '', w.title, w.title || '', { assetMap, ref: true }));
     });
   });
   return figures.length ? `<section class="pf-album" aria-label="사진 모아 보기">${figures.join('')}</section>` : '';
