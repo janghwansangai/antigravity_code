@@ -11,7 +11,7 @@ import '../style.css';
 import './gallery.css';
 import qrcode from 'qrcode-generator';
 import appsScriptSource from '../../apps-script/Code.gs?raw';
-import { addItem, deleteItem, fetchFileBytes, fetchGallery, fetchThumbs, looksLikeScriptUrl, uploadFile } from './api.js';
+import { addItem, deleteItem, fetchFileBytes, fetchGallery, fetchThumbs, looksLikeScriptUrl, parseGalleryAddress, uploadFile } from './api.js';
 import { isValidLink, parseLink } from './links.js';
 
 const root = document.getElementById('gallery-app');
@@ -259,6 +259,7 @@ function renderGalleryShell() {
       <div class="g-top-actions">
         <button type="button" class="btn btn-sm" data-g="refresh" title="새로 고침">🔄</button>
         <button type="button" class="btn btn-sm" data-g="qr">📱 QR</button>
+        <button type="button" class="btn btn-sm" data-g="switch" title="다른 반·다른 선생님 갤러리로 가기">🔀 다른 갤러리</button>
         <button type="button" class="btn btn-primary" data-g="open-add">＋ 내 작품 올리기</button>
       </div>
     </header>
@@ -715,6 +716,35 @@ async function showPdf(bytes, seq, msg) {
   body.innerHTML = `<div class="g-pdf-pages">${pageUrls.map((u, i) => `<img src="${u}" alt="${i + 1}쪽" loading="${i < 2 ? 'eager' : 'lazy'}" />`).join('')}</div>`;
 }
 
+/* ---------------- 🔀 다른 갤러리로 가기 ---------------- */
+function openSwitch() {
+  const modal = $('#g-modal');
+  modal.innerHTML = `
+    <form class="modal-card g-form" id="g-switch-form" novalidate>
+      <div class="modal-head"><h2>🔀 다른 갤러리로 가기</h2><button type="button" class="btn btn-ghost btn-sm" data-g="close" aria-label="닫기">✕</button></div>
+      <p class="pane-hint">다른 반·다른 선생님의 <b>갤러리 주소</b>를 붙여 넣으세요. 이 브라우저에서 <b>🚀 갤러리에 공유하기</b>를 누르면 그 갤러리로 올라가요.</p>
+      <label class="field"><span class="field-label">갤러리 주소</span><input class="input" name="address" type="url" inputmode="url" autocomplete="off" placeholder="https://…/gallery.html#s=…" /></label>
+      <p class="g-form-error" id="g-form-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary btn-lg btn-block">이 갤러리로 가기</button>
+    </form>`;
+  modal.hidden = false;
+  modal.querySelector('[name="address"]').focus();
+}
+
+function submitSwitch(form) {
+  const scriptUrl = parseGalleryAddress(new FormData(form).get('address'));
+  if (!scriptUrl) {
+    $('#g-form-error').textContent = '⚠️ 갤러리 주소가 아니에요. 선생님이 알려 준 주소(…gallery.html#s=…)를 그대로 붙여 넣어 주세요.';
+    return;
+  }
+  if (scriptUrl === state.scriptUrl) {
+    closeModal();
+    toast('지금 보고 있는 갤러리예요.');
+    return;
+  }
+  location.href = galleryLink(scriptUrl); // 주소가 바뀌면 새 갤러리로 다시 열림(이 브라우저의 공유 대상도 바뀜)
+}
+
 function openQr() {
   const link = galleryLink(state.scriptUrl);
   const modal = $('#g-modal');
@@ -759,6 +789,7 @@ root.addEventListener('click', async (e) => {
   else if (act === 'preview') openPreview(el.dataset.id);
   else if (act === 'view') await openViewer(el.dataset.id);
   else if (act === 'mode') setAddMode(el.dataset.mode);
+  else if (act === 'switch') openSwitch();
   else if (act === 'delete') await removeMine(el.dataset.id);
 });
 
@@ -780,6 +811,9 @@ root.addEventListener('submit', (e) => {
   if (e.target.id === 'g-add-form') {
     e.preventDefault();
     submitAdd(e.target);
+  } else if (e.target.id === 'g-switch-form') {
+    e.preventDefault();
+    submitSwitch(e.target);
   }
 });
 

@@ -537,3 +537,10 @@ a.export-item { color: inherit; text-decoration: none; }
 .share-done small { color: var(--muted); font-weight: 400; font-size: 13.5px; }
 .share-done-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .share-done-actions a.btn { text-decoration: none; color: #FFFFFF; }
+.gallery-connected { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; padding: 12px 14px; border-radius: var(--radius); background: var(--mint-soft); }
+.gallery-connected-icon { font-size: 28px; }
+.gallery-connected-text { flex: 1; min-width: 0; display: grid; }
+.gallery-connected-text small { color: #16916F; font-weight: 700; font-size: 12.5px; }
+.gallery-connected-text b { font-family: var(--font-cute); font-weight: 400; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 480px) { .gallery-connected { flex-wrap: wrap; } .gallery-connected .btn { width: 100%; } }
+.link-btn { padding: 0; border: 0; background: none; color: var(--primary-dark); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }

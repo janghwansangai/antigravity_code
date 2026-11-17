@@ -57,29 +57,44 @@ async function galleryInfo(scriptUrl, { fresh = false } = {}) {
 }
 
 /* ---------------- ③단계 화면 조각 ---------------- */
+let changing = false; // '다른 갤러리로 바꾸기'를 누른 상태(새 주소로 연결될 때까지 지금 갤러리는 그대로)
+
+/** 다른 갤러리로 바꾸기 시작 / 취소 */
+export function setChangingGallery(on) {
+  changing = !!on;
+}
+
 export function gallerySectionHtml(exportItemHtml) {
   const g = currentGallery();
-  if (!g) {
+  if (!g || changing) {
     return `
-    <p class="pane-hint">선생님이 알려 준 <b>우리 반 갤러리 주소</b>를 붙여 넣으면, 버튼 하나로 내 작품을 갤러리에 올릴 수 있어요. (선생님이 보여 준 QR로 갤러리를 한 번 열어도 자동으로 연결돼요)</p>
+    <p class="pane-hint">${
+      g
+        ? '바꿀 <b>갤러리 주소</b>를 붙여 넣고 ‘연결’을 누르세요. (그 갤러리의 QR을 열어도 바뀌어요)'
+        : '선생님이 알려 준 <b>우리 반 갤러리 주소</b>를 붙여 넣으면, 버튼 하나로 내 작품을 갤러리에 올릴 수 있어요. (선생님이 보여 준 QR로 갤러리를 한 번 열어도 자동으로 연결돼요)'
+    }</p>
     <div class="gallery-connect">
       <input class="input" id="gallery-address" type="url" inputmode="url" autocomplete="off" placeholder="갤러리 주소 붙여 넣기" aria-label="갤러리 주소" />
       <button type="button" class="btn btn-primary" data-action="gallery-connect">연결</button>
+      ${g ? '<button type="button" class="btn" data-action="gallery-change-cancel">취소</button>' : ''}
     </div>
     <p class="gallery-msg" id="gallery-msg" role="status"></p>`;
   }
   const saved = mem.get('gallery:title', null);
   const title = saved?.scriptUrl === g.scriptUrl ? saved.title : '우리 반 갤러리';
   return `
-    <p class="pane-hint">‘<b id="gallery-title">${esc(title)}</b>’에 연결돼 있어요.</p>
+    <div class="gallery-connected">
+      <span class="gallery-connected-icon" aria-hidden="true">🌈</span>
+      <div class="gallery-connected-text"><small>연결된 갤러리</small><b id="gallery-title">${esc(title)}</b></div>
+      <button type="button" class="btn btn-sm" data-action="gallery-change">🔄 다른 갤러리로 바꾸기</button>
+    </div>
     <div class="export-list">
       ${exportItemHtml('share-gallery', '🚀', '갤러리에 공유하기', '버튼 하나로 선생님 드라이브에 저장되고 우리 반 갤러리에 바로 올라가요. 링크를 복사할 필요 없어요.', true)}
       <a class="export-item" href="${esc(g.link)}" target="_blank" rel="noopener">
         <span class="export-icon" aria-hidden="true">🌈</span>
         <span class="export-text"><b>우리 반 갤러리 열기 ↗</b><small>친구들 작품을 보고, 내가 올린 것을 확인해요.</small></span>
       </a>
-    </div>
-    <button type="button" class="btn btn-ghost btn-sm gallery-change" data-action="gallery-change">다른 갤러리 주소로 바꾸기</button>`;
+    </div>`;
 }
 
 /** 화면을 그린 뒤: 갤러리 제목을 최신으로 */
@@ -113,6 +128,7 @@ export async function connectGallery($) {
   try {
     const data = await galleryInfo(scriptUrl, { fresh: true });
     mem.set('gallery:last', galleryLinkFor(scriptUrl));
+    changing = false;
     say(`✅ ‘${data.title}’에 연결했어요!`, 'is-ok');
     return true;
   } catch {
@@ -121,9 +137,6 @@ export async function connectGallery($) {
   }
 }
 
-export function forgetGallery() {
-  mem.set('gallery:last', '');
-}
 
 /* ---------------- 🚀 공유 창 ---------------- */
 /**
@@ -163,7 +176,7 @@ export async function openShareModal(ctx) {
   card.innerHTML = `
     <form id="share-form" novalidate>
       <div class="modal-head"><h2>🚀 갤러리에 공유하기</h2><button type="button" class="btn btn-ghost btn-sm" data-action="close-share" aria-label="닫기">✕</button></div>
-      <p class="pane-hint">‘${esc(data.title)}’에 올려요. 파일은 선생님 구글 드라이브에 저장되고, 친구들은 갤러리에서 바로 볼 수 있어요.</p>
+      <p class="pane-hint">‘<b>${esc(data.title)}</b>’에 올려요. <button type="button" class="link-btn" data-action="share-change-gallery">다른 갤러리로 바꾸기</button><br />파일은 선생님 구글 드라이브에 저장되고, 친구들은 갤러리에서 바로 볼 수 있어요.</p>
       <div class="share-formats" role="radiogroup" aria-label="올릴 형식">
         <label class="share-format"><input type="radio" name="format" value="pdf" checked /><span><b>📄 PDF</b><em>추천</em><small>가볍고 빨리 열려요 · 갤러리에 표지 그림이 보여요 · 동영상은 썸네일로</small></span></label>
         <label class="share-format"><input type="radio" name="format" value="zip" /><span><b>🌐 웹페이지</b><small>고른 디자인 그대로 · 동영상도 재생 · 큰 동영상(10MB 넘음)은 썸네일로</small></span></label>
