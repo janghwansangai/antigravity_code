@@ -11,7 +11,8 @@ import {
   FONT_LINKS_HTML
 } from '../templates/portfolioRenderer.js';
 import runtimeSource from '../templates/portfolioRuntime.js?raw';
-import { safeFileName, triggerBlobDownload } from '../utils/files.js';
+import { blobToDataUrl, safeFileName, triggerBlobDownload } from '../utils/files.js';
+import { mediaBytes, walkMedia } from '../media/model.js';
 
 const PAGE_CSS = `
 html, body { margin: 0; padding: 0; }
@@ -30,7 +31,7 @@ function inlineRuntimeScript() {
 /**
  * @param {object} state
  * @param {object} opts
- *   assetMap  ZIP 안 파일 경로 표 (없으면 사진을 페이지 안에 직접 넣음)
+ *   assetMap  미디어 id → 주소 (ZIP: 파일 경로, 단일 파일: data URL)
  *   cssHref   CSS를 따로 둘 때의 파일 이름 (없으면 <style> 안에 넣음)
  */
 export function buildStandaloneHtml(state, { assetMap = null, cssHref = '' } = {}) {
@@ -66,18 +67,40 @@ export function portfolioFileBaseName(state) {
   return `${safeFileName(state.profile?.studentName || '나의')}_포트폴리오`;
 }
 
-/** 사진·첨부파일을 모두 품은 .html 파일 하나를 내려받습니다. */
-export function exportSingleHtmlFile(state) {
-  const html = buildStandaloneHtml(state);
-  const fileName = `${portfolioFileBaseName(state)}.html`;
-  triggerBlobDownload(new Blob([html], { type: 'text/html;charset=utf-8' }), fileName);
-  return fileName;
+/** 파일 하나 안에 넣을 수 있는 크기 (이보다 큰 동영상·파일은 썸네일·안내로 대신) */
+export const SINGLE_FILE_ITEM_LIMIT = 30 * 1024 * 1024;
+const SINGLE_FILE_TOTAL_LIMIT = 150 * 1024 * 1024;
+
+/**
+ * 사진·PDF·동영상을 페이지 안에 넣을 data URL 주소표를 만듭니다.
+ * 너무 큰 동영상·첨부파일은 빼고, 뺀 것의 이름을 돌려줍니다.
+ */
+async function buildInlineAssetMap(state) {
+  const assetMap = {};
+  const skipped = [];
+  const items = [];
+  walkMedia(state, (m, w, bucket) => items.push({ m, bucket }));
+  // 작은 것(사진·썸네일·쪽 그림)부터 넣고, 큰 동영상·파일은 남은 용량 안에서만
+  items.sort((a, b) => mediaBytes(a.m) - mediaBytes(b.m));
+  let total = 0;
+  for (const { m, bucket } of items) {
+    const size = mediaBytes(m);
+    const big = bucket === 'videos' || bucket === 'attachments';
+    if (big && (size > SINGLE_FILE_ITEM_LIMIT || total + size > SINGLE_FILE_TOTAL_LIMIT)) {
+      skipped.push(m.name || '파일');
+      continue;
+    }
+    assetMap[m.id] = m.blob ? await blobToDataUrl(m.blob) : m.dataUrl || '';
+    total += size;
+  }
+  return { assetMap, skipped };
 }
 
-/** 다른 컴퓨터에서 이어서 편집할 수 있는 작업 백업(.json)을 내려받습니다. */
-export function exportProjectJsonFile(state) {
-  const { isSample, ...data } = state;
-  const fileName = `${portfolioFileBaseName(state)}_작업백업.json`;
-  triggerBlobDownload(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), fileName);
-  return fileName;
+/** 사진·PDF·동영상을 모두 품은 .html 파일 하나를 내려받습니다. → { fileName, skipped } */
+export async function exportSingleHtmlFile(state) {
+  const { assetMap, skipped } = await buildInlineAssetMap(state);
+  const html = buildStandaloneHtml(state, { assetMap });
+  const fileName = `${portfolioFileBaseName(state)}.html`;
+  triggerBlobDownload(new Blob([html], { type: 'text/html;charset=utf-8' }), fileName);
+  return { fileName, skipped };
 }

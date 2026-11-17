@@ -7,9 +7,10 @@ import { renderPrintDocumentHtml, getPrintDocumentCss, escapeHtml, FONT_LINKS_HT
 /**
  * @param {object} state
  * @param {Function} fallback 팝업이 막혔을 때 실행할 함수 (앱이 PDF 미리보기로 바꾼 뒤 window.print 호출)
+ * @param {object} assetMap 미디어 id → 주소(앱의 blob 주소). 동영상은 썸네일만 들어갑니다.
  * @returns {boolean} 새 창을 열었으면 true
  */
-export function triggerPdfPrint(state, fallback) {
+export function triggerPdfPrint(state, fallback, assetMap = null) {
   const p = state.profile || {};
   const title = [p.portfolioTitle || '나의 포트폴리오', p.studentName].filter(Boolean).join('_');
   const win = window.open('', '_blank', 'width=900,height=1000');
@@ -33,7 +34,7 @@ body { margin: 0; background: #E2E8F0; }
 </style>
 </head>
 <body>
-${renderPrintDocumentHtml(state)}
+${renderPrintDocumentHtml(state, { assetMap })}
 <script>
 (function () {
   var imgs = Array.prototype.slice.call(document.images);
