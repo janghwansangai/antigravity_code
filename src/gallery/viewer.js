@@ -282,3 +282,25 @@ export async function buildViewHtml(bytes) {
   }
   return { html: withBootstrap(html), assets: store.assets };
 }
+
+/**
+ * 앱에서 공유한 PDF(쪽마다 JPEG 한 장)는 pdf.js 없이 JPEG를 바로 꺼냄 → 아주 빠름
+ * 다른 PDF면 빈 배열(그때는 pdf.js로 그림)
+ * @param {Uint8Array} bytes
+ * @returns {Blob[]}
+ */
+export function extractJpegPages(bytes) {
+  const text = new TextDecoder('latin1').decode(bytes); // 1바이트 = 1글자라 위치가 그대로 맞음
+  if (!text.includes('/Producer (Portfolio Maker)')) return [];
+  const re = /\/Subtype \/Image \/Width \d+ \/Height \d+ \/ColorSpace \/DeviceRGB \/BitsPerComponent 8 \/Filter \/DCTDecode \/Length (\d+) >>\nstream\n/g;
+  const pages = [];
+  let m;
+  while ((m = re.exec(text))) {
+    const start = m.index + m[0].length;
+    const len = Number(m[1]);
+    if (start + len > bytes.length) return [];
+    pages.push(new Blob([bytes.subarray(start, start + len)], { type: 'image/jpeg' }));
+    re.lastIndex = start + len;
+  }
+  return pages;
+}

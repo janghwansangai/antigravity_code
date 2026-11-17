@@ -506,3 +506,34 @@ a.export-item { color: inherit; text-decoration: none; }
   .preview, .preview-scroll { display: block !important; overflow: visible; padding: 0; }
   .stage-desktop .pf, .stage-mobile { box-shadow: none; border: 0; }
 }
+
+/* ---------- 🌈 우리 반 갤러리 (③단계) · 🚀 공유 창 ---------- */
+.gallery-connect { display: flex; gap: 8px; }
+.gallery-connect .input { flex: 1; min-width: 0; }
+.gallery-msg { margin: 8px 0 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+.gallery-msg:empty { display: none; }
+.gallery-msg.is-ok { color: #16916F; }
+.gallery-msg.is-error { color: var(--danger); }
+.gallery-change { margin-top: 6px; }
+.modal-card.share-card { width: min(560px, 100%); }
+.share-card .field { margin-bottom: 12px; }
+.share-formats { display: grid; gap: 8px; margin: 4px 0 14px; }
+.share-format { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 2px solid var(--line); border-radius: 16px; cursor: pointer; background: #FFFFFF; }
+.share-format:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.share-format input { margin-top: 4px; width: 18px; height: 18px; accent-color: var(--primary); flex-shrink: 0; }
+.share-format b { font-family: var(--font-cute); font-weight: 400; font-size: 17px; }
+.share-format em { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--primary); color: #FFFFFF; font-style: normal; font-size: 12px; font-weight: 700; vertical-align: 2px; }
+.share-format small { display: block; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.share-replace { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; font-weight: 600; font-size: 14px; }
+.share-replace input { width: 18px; height: 18px; accent-color: var(--primary); }
+.share-replace small { color: var(--muted); font-weight: 400; }
+.share-progress { margin: 4px 0 10px; }
+.share-bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.share-bar i { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), var(--sun)); transition: width 0.25s ease; }
+.share-progress p { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); font-weight: 600; }
+.share-error { margin: 0 0 6px; color: var(--danger); font-weight: 600; font-size: 14px; }
+.share-error:empty { display: none; }
+.share-done { margin: 6px 0 14px; font-size: 16px; font-weight: 600; }
+.share-done small { color: var(--muted); font-weight: 400; font-size: 13.5px; }
+.share-done-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-done-actions a.btn { text-decoration: none; color: #FFFFFF; }

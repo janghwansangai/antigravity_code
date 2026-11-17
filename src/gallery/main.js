@@ -11,14 +11,18 @@ import '../style.css';
 import './gallery.css';
 import qrcode from 'qrcode-generator';
 import appsScriptSource from '../../apps-script/Code.gs?raw';
-import { addItem, deleteItem, fetchFileBytes, fetchGallery, looksLikeScriptUrl } from './api.js';
+import { addItem, deleteItem, fetchFileBytes, fetchGallery, fetchThumbs, looksLikeScriptUrl, uploadFile } from './api.js';
 import { isValidLink, parseLink } from './links.js';
 
 const root = document.getElementById('gallery-app');
 const $ = (sel) => root.querySelector(sel);
 const REFRESH_MS = 60000;
-/** 📖 갤러리 안에서 바로 펼쳐 볼 수 있는 파일 (ZIP·웹페이지·프로젝트 파일) */
+/** 📖 갤러리 안에서 바로 펼쳐 볼 수 있는 파일 (ZIP·웹페이지·프로젝트 파일, 새 버전 서버는 PDF도) */
 const VIEWABLE = new Set(['zip', 'portfolio', 'html']);
+const PDF_VIEW_MAX = 40 * 1024 * 1024; // 이보다 큰 PDF는 드라이브 미리보기로
+const isViewable = (it) =>
+  VIEWABLE.has(it.fileType) || (it.fileType === 'pdf' && state.data?.version >= 2 && it.size > 0 && it.size <= PDF_VIEW_MAX);
+const KIND_LABEL = { pdf: ['📄', 'PDF'], html: ['🌐', '웹페이지'], zip: ['📖', '포트폴리오'], portfolio: ['📖', '포트폴리오'] };
 
 const esc = (s = '') =>
   String(s ?? '')
@@ -151,8 +155,16 @@ function renderSetup() {
       <a class="g-brand" href="./index.html"><span class="brand-logo" aria-hidden="true">🌈</span><span>우리 반 작품 갤러리</span></a>
     </header>
     <main class="g-setup">
+      <div class="g-student-note" role="note">
+        <span class="g-student-face" aria-hidden="true">🧒</span>
+        <div>
+          <b>학생이에요? 여기서는 아무것도 하지 않아도 돼요!</b>
+          <p>이 화면은 <b>선생님</b>이 갤러리를 처음 한 번 만드는 곳이에요. 선생님이 알려 준 <b>갤러리 주소</b>나 <b>QR</b>로 들어가세요.<br />실수로 눌러도 괜찮아요. 여기서 버튼을 눌러도 아무것도 만들어지지 않아요.</p>
+          <a class="btn btn-sm" href="./index.html">← 포트폴리오 만들기로 돌아가기</a>
+        </div>
+      </div>
       <h1 class="g-h1">갤러리 만들기 <small>선생님용 · 10분</small></h1>
-      <p class="pane-hint">학생들이 <b>학급 구글 드라이브</b>에 작품을 올리고 <b>공유 링크</b>를 붙여 넣으면, 이 갤러리에 카드로 모여요. 링크 목록은 선생님 <b>구글 시트</b>에 쌓여서 시트에서 바로 숨기거나 지울 수 있어요. 서버·비용 없이 무료예요.</p>
+      <p class="pane-hint">학생들이 포트폴리오 앱에서 <b>🚀 갤러리에 공유하기</b>를 누르면 파일이 <b>선생님 구글 드라이브</b>의 작품 폴더에 저장되고, 이 갤러리에 카드로 바로 모여요(드라이브 공유 링크를 붙여 넣어도 돼요). 목록은 선생님 <b>구글 시트</b>에 쌓여서 시트에서 바로 숨기거나 지울 수 있어요. 서버·비용 없이 무료예요.</p>
 
       <ol class="g-steps">
         <li>
@@ -162,6 +174,7 @@ function renderSetup() {
         </li>
         <li>
           <b>시트 메뉴 → 확장 프로그램 → Apps Script</b>를 누르고, 들어 있는 코드를 모두 지운 뒤 아래 코드를 붙여 넣고 💾 저장해요.
+          그다음 위쪽 함수 목록에서 <b>‘준비하기’</b>를 고르고 <b>▶ 실행</b> → 권한 허용을 해요(작품 폴더가 만들어져요).
           <div class="g-code-actions">
             <button type="button" class="btn btn-primary btn-sm" data-g="copy-code">📋 코드 복사</button>
             <a class="btn btn-sm" href="https://github.com/janghwansangai/antigravity_code/blob/main/apps-script/Code.gs" target="_blank" rel="noopener">코드 원문 보기 ↗</a>
@@ -176,6 +189,7 @@ function renderSetup() {
           </ul>
           → ‘배포’ → 권한 허용 → 나오는 <b>웹 앱 URL</b>을 복사해요.
           <p class="small muted">학교 계정에서 ‘모든 사용자’가 보이지 않으면 학교 관리자가 막아 둔 것이에요. 개인 구글 계정으로 시트를 만들면 됩니다.</p>
+          <p class="small muted">이미 만든 갤러리를 새 코드로 바꿀 때: 코드를 바꿔 붙여 넣고 ‘준비하기’ ▶ 실행 → <b>배포 → 배포 관리 → ✏️ 수정 → 버전: 새 버전 → 배포</b>. 주소는 그대로예요.</p>
         </li>
         <li>
           <b>웹 앱 URL을 붙여 넣고 연결을 확인해요.</b>
@@ -194,6 +208,7 @@ function renderSetup() {
           <li><b>갤러리 제목</b>: 갤러리 맨 위에 보이는 이름</li>
           <li><b>학급 코드</b>: 적어 두면 코드를 아는 학생만 올릴 수 있어요(낯선 사람이 올리는 것 방지)</li>
           <li><b>올리기 허용</b>: FALSE로 바꾸면 올리기를 잠시 닫아요</li>
+          <li><b>작품 폴더</b>: 학생 파일이 저장될 드라이브 폴더 주소(비우면 내 드라이브에 ‘우리 반 갤러리 작품’ 폴더를 만들어요). 학생들과 함께 쓰는 폴더 주소를 넣어도 돼요</li>
           <li>작품 줄을 지우거나 ‘숨김’ 칸에 TRUE를 적으면 갤러리에서 사라져요</li>
         </ul>
       </div>
@@ -253,6 +268,7 @@ function renderGalleryShell() {
         <label class="g-mine"><input type="checkbox" id="g-only-mine" /> 내가 올린 것만</label>
       </div>
       <div id="g-status" class="g-status" role="status"></div>
+      <p class="g-old" id="g-old" hidden>🔧 <b>선생님께:</b> 갤러리 코드가 예전 버전이에요. 새 코드로 바꾸고 ‘새 버전’으로 다시 배포하면, 학생들이 포트폴리오 앱에서 <b>🚀 갤러리에 공유하기</b>로 바로 올릴 수 있어요. (갤러리 주소는 그대로)</p>
       <div class="g-grid" id="g-grid"></div>
     </main>
     <div class="modal" id="g-modal" hidden></div>
@@ -276,15 +292,21 @@ function filteredItems() {
 
 function cardHtml(it, mine) {
   const info = parseLink(it.link);
-  const viewable = VIEWABLE.has(it.fileType);
-  if (viewable) Object.assign(info, { icon: it.fileType === 'html' ? '🌐' : '📖', label: it.fileType === 'html' ? '웹페이지' : '포트폴리오' });
-  const thumb = info.thumb && !viewable
-    ? `<img src="${esc(info.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
-    : '';
+  const viewable = isViewable(it);
+  if (KIND_LABEL[it.fileType]) Object.assign(info, { icon: KIND_LABEL[it.fileType][0], label: KIND_LABEL[it.fileType][1] });
+  // 썸네일: 앱에서 공유한 작품은 갤러리 서버의 썸네일, 아니면 드라이브 썸네일(PDF·사진·동영상)
+  const own = it.thumb ? thumbCache.get(thumbKey(it)) : '';
+  const driveThumb = !it.thumb && info.thumb && !['zip', 'html', 'portfolio'].includes(it.fileType) ? info.thumb : '';
+  const src = own || driveThumb;
+  const img = it.thumb
+    ? `<img ${own ? `src="${esc(own)}"` : ''} data-thumb="${esc(it.id)}" alt="" />`
+    : driveThumb
+      ? `<img src="${esc(driveThumb)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
+      : '';
   return `
     <article class="g-card">
-      <button type="button" class="g-thumb${info.thumb && !VIEWABLE.has(it.fileType) ? '' : ' no-thumb'}" data-g="${VIEWABLE.has(it.fileType) ? 'view' : 'preview'}" data-id="${esc(it.id)}" aria-label="${esc(it.title)} ${VIEWABLE.has(it.fileType) ? '보기' : '미리 보기'}">
-        ${thumb}<span class="g-icon" aria-hidden="true">${info.icon}</span>
+      <button type="button" class="g-thumb${src ? '' : ' no-thumb'}" data-g="${viewable ? 'view' : 'preview'}" data-id="${esc(it.id)}" aria-label="${esc(it.title)} ${viewable ? '보기' : '미리 보기'}">
+        ${img}<span class="g-icon" aria-hidden="true">${info.icon}</span>
         <span class="g-kind">${info.icon} ${esc(info.label)}</span>
       </button>
       <div class="g-body">
@@ -292,12 +314,58 @@ function cardHtml(it, mine) {
         <p class="g-by">🙂 ${esc(it.name)} · <time datetime="${esc(it.time)}">${esc(relTime(it.time))}</time></p>
         ${it.desc ? `<p class="g-desc">${esc(it.desc)}</p>` : ''}
         <div class="g-actions">
-          ${VIEWABLE.has(it.fileType) ? `<button type="button" class="btn btn-primary btn-sm" data-g="view" data-id="${esc(it.id)}">📖 포트폴리오 보기</button>` : ''}
+          ${viewable ? `<button type="button" class="btn btn-primary btn-sm" data-g="view" data-id="${esc(it.id)}">📖 보기</button>` : ''}
           <a class="btn btn-sm" href="${esc(info.open)}" target="_blank" rel="noopener noreferrer">열기 ↗</a>
           ${mine[it.id] ? `<button type="button" class="btn btn-sm btn-danger-text" data-g="delete" data-id="${esc(it.id)}">지우기</button><span class="g-mine-badge">내가 올림</span>` : ''}
         </div>
       </div>
     </article>`;
+}
+
+/* ---------------- 썸네일 (앱에서 공유한 작품) ---------------- */
+const thumbCache = new Map();
+const THUMB_CACHE = 'gallery-thumbs-v1';
+const thumbKey = (it) => `${it.id}@${it.time}`;
+const thumbUrl = (it) => `https://gallery-cache.local/thumb/${encodeURIComponent(state.scriptUrl)}/${encodeURIComponent(thumbKey(it))}`;
+let thumbsLoading = false;
+
+async function loadThumbs() {
+  if (thumbsLoading || !state.data) return;
+  const need = state.data.items.filter((it) => it.thumb && !thumbCache.has(thumbKey(it)));
+  if (!need.length) return;
+  thumbsLoading = true;
+  try {
+    let cache = null;
+    try {
+      cache = await caches.open(THUMB_CACHE);
+    } catch {
+      cache = null;
+    }
+    const missing = [];
+    for (const it of need) {
+      const hit = cache && (await cache.match(thumbUrl(it)).catch(() => null));
+      if (hit) thumbCache.set(thumbKey(it), await hit.text());
+      else missing.push(it);
+    }
+    if (missing.length) {
+      const got = await fetchThumbs(state.scriptUrl, missing.map((it) => it.id));
+      for (const it of missing) {
+        const v = got[it.id] || '';
+        thumbCache.set(thumbKey(it), v);
+        if (v && cache) cache.put(thumbUrl(it), new Response(v)).catch(() => {});
+      }
+    }
+  } finally {
+    thumbsLoading = false;
+  }
+  root.querySelectorAll('img[data-thumb]').forEach((img) => {
+    const it = state.data.items.find((x) => x.id === img.dataset.thumb);
+    const v = it && thumbCache.get(thumbKey(it));
+    if (v && img.getAttribute('src') !== v) {
+      img.src = v;
+      img.closest('.g-thumb')?.classList.remove('no-thumb');
+    }
+  });
 }
 
 function renderGrid() {
@@ -308,11 +376,13 @@ function renderGrid() {
   $('#g-count').textContent = `작품 ${state.data.items.length}개`;
   const items = filteredItems();
   const mine = myPosts();
+  $('#g-old').hidden = !!state.data.version;
   $('#g-grid').innerHTML = items.length
     ? items.map((it) => cardHtml(it, mine)).join('')
     : `<div class="empty"><div class="empty-icon" aria-hidden="true">${state.data.items.length ? '🔍' : '🐣'}</div><p><b>${
         state.data.items.length ? '찾는 작품이 없어요' : '아직 올라온 작품이 없어요'
       }</b><br />${state.data.items.length ? '다른 낱말로 찾아보세요.' : '‘＋ 내 작품 올리기’로 첫 작품을 올려 보세요!'}</p></div>`;
+  loadThumbs();
 }
 
 async function load({ quiet = false } = {}) {
@@ -340,6 +410,8 @@ async function load({ quiet = false } = {}) {
 }
 
 /* ---------------- 올리기 창 ---------------- */
+const UPLOAD_ACCEPT = '.pdf,.zip,.html,.htm,.portfolio,image/*,video/*';
+
 async function openAdd() {
   if (state.data && state.data.open === false) {
     toast('지금은 올리기가 닫혀 있어요. 선생님께 여쭤 보세요.');
@@ -348,30 +420,56 @@ async function openAdd() {
   const saved = mem.get('gallery:me', {});
   const info = await myPortfolioInfo();
   const needCode = state.data?.needCode;
+  const canUpload = !!state.data?.canUpload;
   const modal = $('#g-modal');
   modal.innerHTML = `
-    <form class="modal-card g-form" id="g-add-form" novalidate>
+    <form class="modal-card g-form" id="g-add-form" novalidate data-mode="${canUpload ? 'file' : 'link'}">
       <div class="modal-head"><h2>＋ 내 작품 올리기</h2><button type="button" class="btn btn-ghost btn-sm" data-g="close" aria-label="닫기">✕</button></div>
-      <details class="more g-howto">
-        <summary>📎 구글 드라이브 링크 복사하는 법</summary>
-        <ol>
-          <li>포트폴리오 앱에서 <b>PDF</b>·<b>웹페이지(ZIP 또는 HTML)</b>·<b>프로젝트 파일</b> 중 하나로 저장하고, 학급 구글 드라이브에 올려요. <b>ZIP은 풀지 말고 그대로</b> 올리면 돼요.</li>
-          <li>올린 파일을 <b>오른쪽 클릭(휴대폰은 ⋮) → 공유 → 링크 복사</b>.</li>
-          <li>‘일반 액세스’를 <b>링크가 있는 우리 학교 사용자</b>(또는 링크가 있는 모든 사용자) <b>뷰어</b>로 바꿔야 친구들이 볼 수 있어요.</li>
-        </ol>
-        <p class="small">💡 <b>ZIP·HTML·프로젝트 파일</b>은 갤러리에서 <b>📖 포트폴리오 보기</b>로 사진·동영상까지 그대로 펼쳐져요. (구글 드라이브는 웹페이지를 직접 보여 주지 못해서 갤러리가 대신 펼쳐 줘요)</p>
-      </details>
+      <p class="g-tip">💡 포트폴리오 앱에서 만들었다면 <b>③ 꾸미기·저장 → 🚀 갤러리에 공유하기</b>가 가장 편해요(파일을 고를 필요 없음).</p>
+      ${
+        canUpload
+          ? `<div class="g-tabs" role="tablist">
+              <button type="button" role="tab" class="g-tab is-on" data-g="mode" data-mode="file" aria-selected="true">📁 파일 올리기</button>
+              <button type="button" role="tab" class="g-tab" data-g="mode" data-mode="link" aria-selected="false">🔗 드라이브 링크</button>
+            </div>`
+          : ''
+      }
+      <label class="field" data-for="file"${canUpload ? '' : ' hidden'}><span class="field-label">올릴 파일<span class="field-hint"> · PDF·웹페이지(ZIP·HTML)·사진·동영상 · ${Math.round((state.data?.maxUpload || 104857600) / 1048576)}MB까지</span></span>
+        <input class="input" name="file" type="file" accept="${UPLOAD_ACCEPT}" /></label>
+      <div data-for="link"${canUpload ? ' hidden' : ''}>
+        <details class="more g-howto">
+          <summary>📎 구글 드라이브 링크 복사하는 법</summary>
+          <ol>
+            <li>포트폴리오 앱에서 <b>PDF</b>·<b>웹페이지(ZIP 또는 HTML)</b>·<b>프로젝트 파일</b> 중 하나로 저장하고, 학급 구글 드라이브에 올려요. <b>ZIP은 풀지 말고 그대로</b> 올리면 돼요.</li>
+            <li>올린 파일을 <b>오른쪽 클릭(휴대폰은 ⋮) → 공유 → 링크 복사</b>.</li>
+            <li>‘일반 액세스’를 <b>링크가 있는 우리 학교 사용자</b>(또는 링크가 있는 모든 사용자) <b>뷰어</b>로 바꿔야 친구들이 볼 수 있어요.</li>
+          </ol>
+          <p class="small">💡 <b>ZIP·HTML·프로젝트 파일</b>은 갤러리에서 <b>📖 보기</b>로 사진·동영상까지 그대로 펼쳐져요.</p>
+        </details>
+        <label class="field"><span class="field-label">구글 드라이브 링크</span><input class="input" name="link" type="url" placeholder="https://drive.google.com/file/d/…/view" /></label>
+        <p class="g-link-check" id="g-link-check"></p>
+      </div>
       <label class="field"><span class="field-label">이름</span><input class="input" name="name" maxlength="20" required value="${esc(saved.name || info.name || '')}" placeholder="예: 김하늘" /></label>
       <label class="field"><span class="field-label">작품 제목</span><input class="input" name="title" maxlength="60" required value="${esc(info.title || '')}" placeholder="예: 쑥쑥 자란 나의 1년" /></label>
-      <label class="field"><span class="field-label">구글 드라이브 링크</span><input class="input" name="link" type="url" required placeholder="https://drive.google.com/file/d/…/view" /></label>
-      <p class="g-link-check" id="g-link-check"></p>
       <label class="field"><span class="field-label">한 줄 설명<span class="field-hint"> · 선택</span></span><input class="input" name="desc" maxlength="200" placeholder="예: 1년 동안 그린 그림을 모았어요" /></label>
       ${needCode ? `<label class="field"><span class="field-label">학급 코드<span class="field-hint"> · 선생님이 알려 준 코드</span></span><input class="input" name="code" maxlength="30" required value="${esc(saved.code || '')}" autocomplete="off" /></label>` : ''}
       <p class="g-form-error" id="g-form-error" role="alert"></p>
       <button type="submit" class="btn btn-primary btn-lg btn-block" id="g-submit">🎉 갤러리에 올리기</button>
     </form>`;
   modal.hidden = false;
-  modal.querySelector(saved.name || info.name ? '[name="link"]' : '[name="name"]').focus();
+  modal.querySelector(saved.name || info.name ? (canUpload ? '[name="file"]' : '[name="link"]') : '[name="name"]').focus();
+}
+
+function setAddMode(mode) {
+  const form = $('#g-add-form');
+  if (!form) return;
+  form.dataset.mode = mode;
+  form.querySelectorAll('[data-for]').forEach((el) => (el.hidden = el.dataset.for !== mode));
+  form.querySelectorAll('.g-tab').forEach((b) => {
+    b.classList.toggle('is-on', b.dataset.mode === mode);
+    b.setAttribute('aria-selected', b.dataset.mode === mode ? 'true' : 'false');
+  });
+  $('#g-form-error').textContent = '';
 }
 
 function checkLinkField(value) {
@@ -392,8 +490,44 @@ function checkLinkField(value) {
   el.className = `g-link-check${info.kind === 'web' ? '' : ' is-ok'}`;
 }
 
+/** 올리는 파일의 카드 썸네일(사진·동영상만, 400×300). PDF는 드라이브 썸네일을 씀 */
+async function fileThumb(file) {
+  const draw = (src, w, h) => {
+    const c = document.createElement('canvas');
+    c.width = 400;
+    c.height = 300;
+    const s = Math.max(400 / w, 300 / h);
+    c.getContext('2d').drawImage(src, (400 - w * s) / 2, (300 - h * s) / 2, w * s, h * s);
+    for (const q of [0.72, 0.5]) {
+      const url = c.toDataURL('image/jpeg', q);
+      if (url.length <= 44000) return url;
+    }
+    return '';
+  };
+  try {
+    if (/^image\//.test(file.type)) {
+      const bmp = await createImageBitmap(file);
+      const url = draw(bmp, bmp.width, bmp.height);
+      bmp.close?.();
+      return url;
+    }
+    if (/^video\//.test(file.type)) {
+      const { makeVideoPoster } = await import('../utils/video.js');
+      const { poster } = await makeVideoPoster(file);
+      const bmp = await createImageBitmap(poster);
+      const url = draw(bmp, bmp.width, bmp.height);
+      bmp.close?.();
+      return url;
+    }
+  } catch {
+    /* 썸네일 없이 */
+  }
+  return '';
+}
+
 async function submitAdd(form) {
   const fd = new FormData(form);
+  const mode = form.dataset.mode || 'link';
   const item = {
     name: String(fd.get('name') || '').trim(),
     title: String(fd.get('title') || '').trim(),
@@ -401,27 +535,38 @@ async function submitAdd(form) {
     desc: String(fd.get('desc') || '').trim(),
     code: String(fd.get('code') || '').trim()
   };
+  const file = fd.get('file');
   const err = $('#g-form-error');
   const fail = (msg, field) => {
     err.textContent = `⚠️ ${msg}`;
     if (field) form.querySelector(`[name="${field}"]`)?.focus();
   };
+  if (mode === 'file') {
+    if (!(file instanceof File) || !file.size) return fail('올릴 파일을 골라 주세요.', 'file');
+    if (file.size > (state.data?.maxUpload || 104857600)) return fail('파일이 너무 커요. 포트폴리오 앱의 🚀 갤러리에 공유하기(가볍게 만들어 올림)를 써 보세요.', 'file');
+  } else if (!isValidLink(item.link)) return fail('링크가 올바르지 않아요. https:// 로 시작하는 주소를 붙여 넣어 주세요.', 'link');
   if (!item.name) return fail('이름을 적어 주세요.', 'name');
   if (!item.title) return fail('작품 제목을 적어 주세요.', 'title');
-  if (!isValidLink(item.link)) return fail('링크가 올바르지 않아요. https:// 로 시작하는 주소를 붙여 넣어 주세요.', 'link');
   if (state.data?.needCode && !item.code) return fail('학급 코드를 적어 주세요.', 'code');
   const btn = $('#g-submit');
   btn.disabled = true;
   btn.textContent = '올리는 중…';
   err.textContent = '';
   try {
-    const r = await addItem(state.scriptUrl, item);
+    let r;
+    if (mode === 'file') {
+      const thumb = await fileThumb(file);
+      const { link: _l, ...meta } = item;
+      r = await uploadFile(state.scriptUrl, { ...meta, blob: file, fileName: file.name, thumb }, (sent, total) => {
+        btn.textContent = `올리는 중… ${Math.round((sent / total) * 100)}%`;
+      });
+    } else r = await addItem(state.scriptUrl, item);
     if (!r?.ok) return fail(r?.error || '올리지 못했어요.', r?.field);
     mem.set('gallery:me', { name: item.name, code: item.code });
     mem.set(mineKey(), { ...myPosts(), [r.id]: r.token });
     closeModal();
     if (r.warning) toast(`🎉 올렸어요! 그런데 ⚠️ ${r.warning}`, 9000);
-    else toast(VIEWABLE.has(r.fileType) ? '🎉 갤러리에 올렸어요! 📖 포트폴리오 보기로 펼쳐 볼 수 있어요.' : '🎉 갤러리에 올렸어요!');
+    else toast(isViewable({ fileType: r.fileType, size: file?.size || 1 }) ? '🎉 갤러리에 올렸어요! 📖 보기로 바로 열어 볼 수 있어요.' : '🎉 갤러리에 올렸어요!');
     await load({ quiet: true });
   } catch {
     fail('인터넷 연결을 확인하고 다시 눌러 주세요.');
@@ -502,16 +647,25 @@ async function openViewer(id) {
   };
   try {
     const [{ bytes }, { buildViewHtml }] = await Promise.all([
-      fetchFileBytes(state.scriptUrl, id, (done, total) => {
-        if (seq !== viewSeq) return;
-        const bar = $('#g-view-bar');
-        if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`;
-        msg(`작품을 받아 오는 중… ${(done / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)}MB`);
-      }),
+      fetchFileBytes(
+        state.scriptUrl,
+        id,
+        (done, total) => {
+          if (seq !== viewSeq) return;
+          const bar = $('#g-view-bar');
+          if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`;
+          msg(`작품을 받아 오는 중… ${(done / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)}MB`);
+        },
+        { size: it.size }
+      ),
       import('./viewer.js')
     ]);
     if (seq !== viewSeq) return;
     msg('펼치는 중…');
+    if (isPdfBytes(bytes)) {
+      await showPdf(bytes, seq, msg);
+      return;
+    }
     const { html, assets } = await buildViewHtml(bytes);
     if (seq !== viewSeq || modal.hidden) return;
     const frame = document.createElement('iframe');
@@ -541,6 +695,26 @@ async function openViewer(id) {
   }
 }
 
+const isPdfBytes = (b) => b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46; // %PDF
+let pageUrls = [];
+
+/** PDF: 쪽 그림을 차례로 보여 줌. 앱에서 공유한 PDF는 들어 있는 JPEG를 바로 꺼내고(빠름), 다른 PDF는 pdf.js로 그림 */
+async function showPdf(bytes, seq, msg) {
+  const { extractJpegPages } = await import('./viewer.js');
+  let pages = extractJpegPages(bytes);
+  if (!pages.length) {
+    msg('PDF 쪽 그림 만드는 중…');
+    const { renderPdfPages } = await import('../utils/pdf.js');
+    const r = await renderPdfPages(new Blob([bytes], { type: 'application/pdf' }), (d, t) => msg(`PDF 쪽 그림 만드는 중… ${d}/${t}쪽`));
+    pages = r.pages.map((p) => p.blob);
+  }
+  if (seq !== viewSeq) return;
+  pageUrls.forEach((u) => URL.revokeObjectURL(u));
+  pageUrls = pages.map((b) => URL.createObjectURL(b));
+  const body = $('#g-viewer-body');
+  body.innerHTML = `<div class="g-pdf-pages">${pageUrls.map((u, i) => `<img src="${u}" alt="${i + 1}쪽" loading="${i < 2 ? 'eager' : 'lazy'}" />`).join('')}</div>`;
+}
+
 function openQr() {
   const link = galleryLink(state.scriptUrl);
   const modal = $('#g-modal');
@@ -557,6 +731,8 @@ function closeModal() {
   const modal = $('#g-modal');
   if (!modal) return;
   viewSeq++;
+  pageUrls.forEach((u) => URL.revokeObjectURL(u));
+  pageUrls = [];
   stopAssetHandoff();
   stopAssetHandoff = () => {};
   modal.hidden = true;
@@ -582,6 +758,7 @@ root.addEventListener('click', async (e) => {
   else if (act === 'close') closeModal();
   else if (act === 'preview') openPreview(el.dataset.id);
   else if (act === 'view') await openViewer(el.dataset.id);
+  else if (act === 'mode') setAddMode(el.dataset.mode);
   else if (act === 'delete') await removeMine(el.dataset.id);
 });
 

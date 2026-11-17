@@ -11,7 +11,7 @@
  * 다시 편집하려면 ZIP이 아니라 '프로젝트 파일(.portfolio)'을 저장해 두세요.
  */
 import JSZip from 'jszip';
-import { getPortfolioTemplatesCss } from '../templates/portfolioRenderer.js';
+import { BIG_FILE_NOTE, BIG_VIDEO_NOTE, getPortfolioTemplatesCss } from '../templates/portfolioRenderer.js';
 import { buildStandaloneHtml, portfolioFileBaseName } from './htmlExporter.js';
 import { dataUrlToBlob, triggerBlobDownload } from '../utils/files.js';
 import { walkMedia } from '../media/model.js';
@@ -47,7 +47,12 @@ function zipFileName(index, name, mimeType, fallback) {
   return `${String(index).padStart(3, '0')}_${stem}.${ext.toLowerCase()}`;
 }
 
-export async function generatePortfolioZip(state, onProgress) {
+/**
+ * ZIP 파일(Blob) 만들기
+ * @param {{ onProgress?: (pct:number)=>void, include?: (m, bucket, blob)=>boolean, notes?: { video?: string, file?: string } }} opts
+ *   include: false를 돌려준 동영상·첨부파일은 넣지 않음(동영상은 썸네일, 파일은 안내만) — 갤러리 공유용 가벼운 ZIP
+ */
+export async function buildPortfolioZip(state, { onProgress, include = null, notes = {} } = {}) {
   const zip = new JSZip();
   const assetMap = {};
   let n = 0;
@@ -55,6 +60,7 @@ export async function generatePortfolioZip(state, onProgress) {
   walkMedia(state, (m, w, bucket) => {
     const blob = m.blob || (m.dataUrl ? dataUrlToBlob(m.dataUrl) : null);
     if (!blob) return;
+    if (include && !include(m, bucket, blob)) return;
     const folder = FOLDER_BY_BUCKET[bucket] || 'files';
     const name = zipFileName(++n, m.name || '', blob.type || m.mimeType || '', folder.replace(/s$/, ''));
     const path = `assets/${folder}/${name}`;
@@ -63,9 +69,16 @@ export async function generatePortfolioZip(state, onProgress) {
   });
 
   zip.file('style.css', getPortfolioTemplatesCss());
-  zip.file('index.html', buildStandaloneHtml(state, { assetMap, cssHref: 'style.css' }));
+  let html = buildStandaloneHtml(state, { assetMap, cssHref: 'style.css' });
+  if (notes.video) html = html.split(BIG_VIDEO_NOTE).join(notes.video);
+  if (notes.file) html = html.split(BIG_FILE_NOTE).join(notes.file);
+  zip.file('index.html', html);
 
-  const blob = await zip.generateAsync({ type: 'blob', streamFiles: true }, (meta) => onProgress?.(meta.percent));
+  return zip.generateAsync({ type: 'blob', streamFiles: true }, (meta) => onProgress?.(meta.percent));
+}
+
+export async function generatePortfolioZip(state, onProgress) {
+  const blob = await buildPortfolioZip(state, { onProgress });
   const fileName = `${portfolioFileBaseName(state)}.zip`;
   triggerBlobDownload(blob, fileName);
   return fileName;

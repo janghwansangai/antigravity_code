@@ -31,6 +31,7 @@ import { PHOTO_SIZES, dataUrlToBlob, formatBytes, getImageSize, isImageFile, rot
 import { openPhotoEditor } from './editor/photoEditor.js';
 import { openCamera } from './editor/camera.js';
 import { ingestFiles, estimateStoredBytes } from './media/ingest.js';
+import { connectGallery, copyShareLink, forgetGallery, gallerySectionHtml, hydrateGallerySection, openShareModal } from './share/galleryShare.js';
 import { VIDEO_SIZES, DEFAULT_VIDEO_SIDE, canCompressVideo, compressVideo, renameForType } from './utils/videoCompress.js';
 import { mediaMime, totalMediaBytes, walkMedia } from './media/model.js';
 import { PROJECT_EXT, canSaveInPlace, readProjectFile, saveProjectFile, savedFileName } from './project/projectFile.js';
@@ -189,6 +190,7 @@ function renderShell() {
     </nav>
 
     <div class="modal" id="switcher" hidden></div>
+    <div class="modal" id="share-modal" hidden></div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
   `;
 }
@@ -221,7 +223,10 @@ function renderEditor({ resetScroll = false } = {}) {
 
   renderSteps();
   renderWho();
-  if (ui.step === 'design') updateStorageInfo();
+  if (ui.step === 'design') {
+    updateStorageInfo();
+    hydrateGallerySection($);
+  }
   if (resetScroll) {
     body.scrollTop = 0;
     if (window.matchMedia('(max-width: 1024px)').matches) window.scrollTo({ top: 0 });
@@ -568,25 +573,6 @@ function exportItemHtml(action, icon, title, desc, primary = false) {
     </button>`;
 }
 
-/** 우리 반 갤러리(gallery.html): 이 브라우저에서 마지막으로 연 학급 갤러리가 있으면 그 주소로 */
-function galleryItemHtml() {
-  let last = '';
-  try {
-    last = JSON.parse(localStorage.getItem('gallery:last') || '""');
-  } catch {
-    last = '';
-  }
-  const ok = typeof last === 'string' && last.startsWith(`${location.origin}/`) && last.includes('#s=');
-  const href = ok ? last : './gallery.html';
-  const desc = ok
-    ? '학급 구글 드라이브에 올린 작품 링크를 모아 보는 곳이에요. ZIP·웹페이지·프로젝트 파일은 갤러리에서 바로 펼쳐 볼 수 있어요.'
-    : '선생님이 알려 준 갤러리 주소(또는 QR)로 들어가 드라이브 링크를 올려요. 선생님은 여기를 눌러 갤러리를 만들 수 있어요.';
-  return `<a class="export-item" href="${esc(href)}" target="_blank" rel="noopener">
-      <span class="export-icon" aria-hidden="true">🌈</span>
-      <span class="export-text"><b>${ok ? '우리 반 갤러리 열기 ↗' : '우리 반 갤러리 (드라이브 링크 모으기) ↗'}</b><small>${desc}</small></span>
-    </a>`;
-}
-
 function designStepHtml(state) {
   const tpl = getTemplateMeta(state.selectedTemplate);
   const cute = DESIGN_TEMPLATES.filter((t) => t.group === 'cute');
@@ -628,10 +614,8 @@ function designStepHtml(state) {
       </label>
     </div>
 
-    <h3 class="sub-title">🌈 우리 반 갤러리</h3>
-    <div class="export-list">
-      ${galleryItemHtml()}
-    </div>
+    <h3 class="sub-title" id="gallery-section">🌈 우리 반 갤러리</h3>
+    ${gallerySectionHtml(exportItemHtml)}
 
     <h3 class="sub-title">📦 저장 공간</h3>
     <div class="storage-box">
@@ -692,6 +676,16 @@ async function openSwitcher() {
 
 function closeSwitcher() {
   $('#switcher').hidden = true;
+}
+
+function closeShare() {
+  if ($('#share-submit')?.disabled) {
+    toast('갤러리에 올리는 중이에요. 끝날 때까지 잠깐만 기다려 주세요.');
+    return;
+  }
+  const m = $('#share-modal');
+  m.hidden = true;
+  m.innerHTML = '';
 }
 
 async function afterPortfolioChanged(message) {
@@ -1261,6 +1255,10 @@ async function onClick(e) {
     closeSwitcher();
     return;
   }
+  if (e.target === $('#share-modal')) {
+    closeShare();
+    return;
+  }
   const el = e.target.closest('[data-action]');
   if (!el || !app.contains(el) || el.disabled) return;
   const { action, id } = el.dataset;
@@ -1420,6 +1418,31 @@ async function onClick(e) {
     case 'close-switcher':
       closeSwitcher();
       break;
+    case 'gallery-connect':
+      if (await connectGallery($)) setTimeout(() => renderEditor(), 900);
+      break;
+    case 'gallery-change':
+      if (confirm('지금 연결된 갤러리 대신 다른 갤러리 주소를 넣을까요? (이미 올린 작품은 그대로예요)')) {
+        forgetGallery();
+        renderEditor();
+        requestAnimationFrame(() => $('#gallery-address')?.focus());
+      }
+      break;
+    case 'share-gallery':
+      await openShareModal({
+        modal: $('#share-modal'),
+        portfolioId: store.getPortfolioId(),
+        getState: () => store.getState(),
+        flush: () => store.flush(),
+        toast
+      });
+      break;
+    case 'close-share':
+      closeShare();
+      break;
+    case 'share-copy-link':
+      await copyShareLink(el, toast);
+      break;
     case 'switch-portfolio':
       if (id === store.getPortfolioId()) {
         closeSwitcher();
@@ -1550,6 +1573,11 @@ function onPaste(e) {
 
 function onKeyDown(e) {
   if (e.key === 'Escape' && !$('#switcher').hidden) closeSwitcher();
+  if (e.key === 'Escape' && !$('#share-modal').hidden) closeShare();
+  if (e.key === 'Enter' && e.target.id === 'gallery-address') {
+    e.preventDefault();
+    $('[data-action="gallery-connect"]')?.click();
+  }
 }
 
 function bindEvents() {

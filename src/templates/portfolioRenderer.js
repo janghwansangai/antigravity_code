@@ -61,6 +61,10 @@ export function getTemplateMeta(id) {
   );
 }
 
+/** 파일에 넣지 못한 큰 동영상·첨부파일 안내 (공유용 파일에서는 다른 문장으로 바꿈) */
+export const BIG_VIDEO_NOTE = '동영상은 용량이 커서 이 파일에는 썸네일만 넣었어요(ZIP 파일에 원본이 있어요).';
+export const BIG_FILE_NOTE = '용량이 커서 이 파일에는 넣지 않았어요(ZIP 파일에 있어요)';
+
 function coverFirst(list, coverId) {
   const coverIdx = coverId ? list.findIndex((p) => p.id === coverId) : -1;
   if (coverIdx > 0) list.unshift(...list.splice(coverIdx, 1));
@@ -162,7 +166,7 @@ function renderFigure(photo, src, altFallback, extraCaption = '', { assetMap = n
     } else if (stillVideo || !src) {
       still = true;
       body = `<img class="pf-video-poster" src="${poster}" data-pf-id="${pid}" ${posterAlt} />`;
-      if (!stillVideo) note = '동영상은 용량이 커서 이 파일에는 썸네일만 넣었어요(ZIP 파일에 원본이 있어요).';
+      if (!stillVideo) note = BIG_VIDEO_NOTE;
     } else {
       body = `<video src="${escapeUrl(src)}" poster="${poster}" data-pf-id="${pid}" controls playsinline preload="metadata"${size}></video><img class="pf-video-poster" data-pf-same="${pid}" ${posterAlt} />`;
     }
@@ -219,7 +223,7 @@ function renderFileLink(a, href) {
   if (!href) {
     return `<li class="pf-file-item"><span class="pf-file is-missing"><span class="pf-file-icon">FILE</span><span class="pf-file-text"><b>${escapeHtml(
       a.name || '첨부파일'
-    )}</b><small>용량이 커서 이 파일에는 넣지 않았어요(ZIP 파일에 있어요)</small></span></span></li>`;
+    )}</b><small>${BIG_FILE_NOTE}</small></span></span></li>`;
   }
   const pdf = isPdfFile(a);
   const name = escapeHtml(a.name || '첨부파일');
