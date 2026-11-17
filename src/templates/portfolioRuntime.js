@@ -77,7 +77,7 @@ export function attachPortfolioInteractions(root) {
       return;
     }
 
-    var img = t.closest('.pf-fig img');
+    var img = t.closest('.pf-fig img, .pf-doc-page');
     if (img && root.contains(img)) {
       openLightbox(img);
       return;
@@ -152,7 +152,7 @@ export function attachPortfolioInteractions(root) {
     big.alt = img.alt || '';
     box.appendChild(big);
 
-    var fig = img.closest('figure');
+    var fig = img.closest('.pf-fig, .pf-doc');
     var cap = fig && fig.querySelector('figcaption');
     if (cap && cap.textContent.trim()) {
       var p = document.createElement('p');
