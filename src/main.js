@@ -18,25 +18,21 @@ import {
   getPrintDocumentCss,
   getTemplateMeta,
   getWorkPhotos,
+  getWorkVisuals,
   isPdfFile,
   renderPortfolioHtml,
   renderPrintDocumentHtml
 } from './templates/portfolioRenderer.js';
 import { attachPortfolioInteractions } from './templates/portfolioRuntime.js';
-import { exportProjectJsonFile, exportSingleHtmlFile } from './export/htmlExporter.js';
+import { exportSingleHtmlFile } from './export/htmlExporter.js';
 import { generatePortfolioZip } from './export/zipExporter.js';
 import { triggerPdfPrint } from './export/pdfExporter.js';
-import {
-  MAX_ATTACHMENT_BYTES,
-  formatBytes,
-  getImageSize,
-  isImageFile,
-  prepareImage,
-  readFileAsDataUrl,
-  rotateDataUrl,
-  uid
-} from './utils/files.js';
+import { PHOTO_SIZES, dataUrlToBlob, formatBytes, getImageSize, isImageFile, rotateImage, shrinkImage, uid } from './utils/files.js';
 import { openPhotoEditor } from './editor/photoEditor.js';
+import { openCamera } from './editor/camera.js';
+import { ingestFiles, estimateStoredBytes } from './media/ingest.js';
+import { mediaMime, totalMediaBytes, walkMedia } from './media/model.js';
+import { PROJECT_EXT, canSaveInPlace, readProjectFile, saveProjectFile, savedFileName } from './project/projectFile.js';
 
 const app = document.getElementById('app');
 const $ = (sel) => app.querySelector(sel);
@@ -51,8 +47,26 @@ const EMPTY_PREVIEW_MESSAGE = '아직 활동 기록이 없어요. 왼쪽 ‘활�
 const UPLOAD_KINDS = {
   art: { icon: '🎨', label: '작품 사진', sub: '그림·만들기·글', bucket: 'images', accept: 'image/*' },
   activity: { icon: '📸', label: '활동 사진', sub: '수업·체험 모습', bucket: 'activityPhotos', accept: 'image/*' },
-  file: { icon: '📄', label: 'PDF·파일', sub: '보고서·발표 자료', bucket: null, accept: '' }
+  video: { icon: '🎬', label: '동영상', sub: '발표·공연·실험', bucket: 'images', accept: 'video/*' },
+  file: { icon: '📄', label: 'PDF·파일', sub: '내용이 보여요', bucket: 'images', accept: '' }
 };
+const PHOTO_LAYOUT_OPTIONS = [
+  ['auto', '자동 맞춤'],
+  ['2', '가로 2장씩'],
+  ['3', '가로 3장씩'],
+  ['4', '가로 4장씩']
+];
+const DOC_PRESETS = [
+  ['none', '파일로만 (내용 안 보임)'],
+  ['1x1', '첫 쪽만 크게'],
+  ['2x1', '2쪽 (가로 2장)'],
+  ['2x2', '4쪽 (2×2)'],
+  ['3x2', '6쪽 (3×2)'],
+  ['3x3', '9쪽 (3×3)'],
+  ['all2', '모든 쪽 (가로 2장씩)'],
+  ['all3', '모든 쪽 (가로 3장씩)'],
+  ['custom', '직접 고른 쪽']
+];
 
 const ui = {
   step: 'profile', // 'profile' | 'works' | 'design'
@@ -63,52 +77,36 @@ const ui = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 사진 주소 캐시: 큰 data URL 대신 짧은 blob: 주소로 화면을 그립니다.        */
-/* (사진이 수십 장이어도 글자를 입력할 때 미리보기가 느려지지 않도록)        */
+/* 미디어 주소 캐시: 파일(Blob)·data URL을 짧은 blob: 주소로 바꿔 화면을 그립니다. */
+/* (사진·동영상이 많아도 글자를 입력할 때 미리보기가 느려지지 않도록)            */
 /* ------------------------------------------------------------------ */
 const blobCache = new Map(); // id → { src, url }
 
-function dataUrlToBlob(dataUrl) {
-  const comma = dataUrl.indexOf(',');
-  const header = dataUrl.slice(5, comma);
-  const mime = header.split(';')[0] || 'application/octet-stream';
-  const body = dataUrl.slice(comma + 1);
-  if (!header.includes(';base64')) return new Blob([decodeURIComponent(body)], { type: mime });
-  const bin = atob(body);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
-}
-
 function displayUrl(item) {
-  const src = item?.dataUrl;
-  if (!src || !src.startsWith('data:')) return src || '';
+  if (!item) return '';
+  const src = item.blob || item.dataUrl;
+  if (!src) return '';
+  if (typeof src === 'string' && !src.startsWith('data:')) return src;
   const hit = blobCache.get(item.id);
   if (hit && hit.src === src) return hit.url;
   if (hit) URL.revokeObjectURL(hit.url);
   try {
-    const url = URL.createObjectURL(dataUrlToBlob(src));
+    const url = URL.createObjectURL(typeof src === 'string' ? dataUrlToBlob(src) : src);
     blobCache.set(item.id, { src, url });
     return url;
   } catch {
-    return src;
+    return typeof src === 'string' ? src : '';
   }
 }
 
-/** 미리보기용 주소표 (렌더러의 assetMap 형식) + 쓰지 않는 주소 정리 */
+/** 미리보기용 주소표 (미디어 id → blob 주소) + 쓰지 않는 주소 정리 */
 function previewAssetMap(state) {
-  const map = { activityPhotos: {}, images: {}, attachments: {} };
-  const seen = new Set();
-  state.works.forEach((w) => {
-    ['activityPhotos', 'images', 'attachments'].forEach((bucket) => {
-      (w[bucket] || []).forEach((m) => {
-        map[bucket][m.id] = displayUrl(m);
-        seen.add(m.id);
-      });
-    });
+  const map = {};
+  walkMedia(state, (m) => {
+    map[m.id] = displayUrl(m);
   });
   blobCache.forEach((v, id) => {
-    if (!seen.has(id)) {
+    if (!(id in map)) {
       URL.revokeObjectURL(v.url);
       blobCache.delete(id);
     }
@@ -222,6 +220,7 @@ function renderEditor({ resetScroll = false } = {}) {
 
   renderSteps();
   renderWho();
+  if (ui.step === 'design') updateStorageInfo();
   if (resetScroll) {
     body.scrollTop = 0;
     if (window.matchMedia('(max-width: 1024px)').matches) window.scrollTo({ top: 0 });
@@ -323,9 +322,14 @@ function worksListHtml(state) {
     <div class="add-row">
       <button type="button" class="btn btn-primary btn-lg" data-action="add-work">＋ 새 활동</button>
       <label class="btn btn-lg btn-outline" data-drop="new">
-        📷 사진부터 올리기
-        <input type="file" accept="image/*" multiple hidden data-upload="new" />
+        🖼️ 사진부터 올리기
+        <input type="file" accept="image/*,video/*,.pdf" multiple hidden data-upload="new" />
       </label>
+    </div>
+    <div class="quick-row">
+      <button type="button" class="btn btn-sm" data-action="camera" data-mode="photo">📷 카메라로 찍기</button>
+      <button type="button" class="btn btn-sm" data-action="camera" data-mode="doc">📄 문서 스캔</button>
+      <button type="button" class="btn btn-sm" data-action="paste-clipboard">📋 캡처 붙여넣기</button>
     </div>
 
     ${
@@ -354,7 +358,14 @@ function uploadTileHtml(kind) {
     </label>`;
 }
 
+function coverBadge(p, i) {
+  return i === 0
+    ? '<span class="photo-cover is-on">★ 대표</span>'
+    : `<button type="button" class="photo-cover" data-action="make-cover" data-id="${esc(p.id)}" title="맨 앞에 크게 보여 줄 대표로">☆ 대표로</button>`;
+}
+
 function photoItemHtml(p, i) {
+  if (p.kind === 'video') return videoItemHtml(p, i);
   const isArt = p.kind === 'art';
   return `
     <li class="photo-item">
@@ -364,23 +375,93 @@ function photoItemHtml(p, i) {
           isArt ? '🎨 작품' : '📸 활동'
         } ⇄</button>
         <button type="button" class="photo-remove" data-action="remove-photo" data-id="${esc(p.id)}" aria-label="사진 삭제">✕</button>
-        ${
-          i === 0
-            ? '<span class="photo-cover is-on">★ 대표</span>'
-            : `<button type="button" class="photo-cover" data-action="make-cover" data-id="${esc(p.id)}" title="맨 앞에 크게 보여 줄 대표 사진으로">☆ 대표로</button>`
-        }
+        ${coverBadge(p, i)}
       </div>
       <div class="photo-tools">
         <button type="button" class="photo-tool" data-action="rotate-photo" data-id="${esc(p.id)}" title="오른쪽으로 돌리기" aria-label="사진 돌리기">↻</button>
-        <button type="button" class="photo-tool" data-action="edit-photo" data-id="${esc(p.id)}" title="돌리기·얼굴 가리기">✏️ 고치기</button>
+        <button type="button" class="photo-tool" data-action="edit-photo" data-tool="crop" data-id="${esc(p.id)}" title="필요한 부분만 자르기" aria-label="사진 자르기">✂️</button>
+        <button type="button" class="photo-tool" data-action="edit-photo" data-id="${esc(p.id)}" title="자르기·문서 스캔·얼굴 가리기">✏️ 고치기</button>
       </div>
       <input class="input input-sm" type="text" data-photo-caption="${esc(p.id)}" value="${esc(p.caption || '')}" placeholder="사진 설명 (선택)" />
     </li>`;
 }
 
+function videoItemHtml(v, i) {
+  const mins = v.duration ? `${Math.floor(v.duration / 60)}:${String(v.duration % 60).padStart(2, '0')}` : '';
+  return `
+    <li class="photo-item is-video">
+      <div class="photo-frame">
+        <img src="${esc(displayUrl(v.poster))}" alt="" />
+        <span class="photo-kind kind-video">🎬 동영상${mins ? ` · ${mins}` : ''}</span>
+        <span class="video-play" aria-hidden="true">▶</span>
+        <button type="button" class="photo-remove" data-action="remove-photo" data-id="${esc(v.id)}" aria-label="동영상 삭제">✕</button>
+        ${coverBadge(v, i)}
+      </div>
+      <p class="video-meta">${esc(v.name)} <small>${esc(v.size || '')}</small></p>
+      <input class="input input-sm" type="text" data-photo-caption="${esc(v.id)}" value="${esc(v.caption || '')}" placeholder="동영상 설명 (선택)" />
+    </li>`;
+}
+
+/** PDF 보이기 설정의 현재 모양을 미리 정한 이름으로 */
+function docPresetOf(a) {
+  const sel = a.docPages || [];
+  const n = (a.pages || []).length;
+  const firstN = (k) => sel.length === Math.min(k, n) && sel.every((v, i) => v === i);
+  if (!sel.length) return 'none';
+  if (a.docCols === 1 && firstN(1)) return '1x1';
+  if (a.docCols === 2 && sel.length === n && firstN(n) && n > 4) return 'all2';
+  if (a.docCols === 3 && sel.length === n && firstN(n) && n > 9) return 'all3';
+  if (a.docCols === 2 && firstN(2) && n >= 2 && sel.length === 2) return '2x1';
+  if (a.docCols === 2 && firstN(4)) return '2x2';
+  if (a.docCols === 3 && firstN(6)) return '3x2';
+  if (a.docCols === 3 && firstN(9)) return '3x3';
+  return 'custom';
+}
+
+function fileItemHtml(a) {
+  const pdf = isPdfFile(a);
+  const badge = pdf ? 'PDF' : esc((a.name.split('.').pop() || 'FILE').slice(0, 4).toUpperCase());
+  const head = `<div class="file-row">
+      <span class="file-badge${pdf ? ' is-pdf' : ''}">${badge}</span>
+      <a class="file-name" href="${esc(displayUrl(a))}" target="_blank" rel="noopener"${pdf ? '' : ` download="${esc(a.name)}"`}>${esc(a.name)}</a>
+      <small>${esc(a.size || '')}</small>
+      <button type="button" class="file-remove" data-action="remove-file" data-id="${esc(a.id)}" aria-label="${esc(a.name)} 삭제">✕</button>
+    </div>`;
+  if (!pdf) return `<li class="file-item">${head}</li>`;
+  if (!a.pages?.length) {
+    return `<li class="file-item">${head}
+      <button type="button" class="btn btn-sm doc-render" data-action="render-pdf" data-id="${esc(a.id)}">📄 PDF 내용을 포트폴리오에 보이게 하기</button></li>`;
+  }
+  const preset = docPresetOf(a);
+  const chosen = new Set(a.docPages || []);
+  const total = a.pageCount || a.pages.length;
+  return `<li class="file-item has-doc">${head}
+    <div class="doc-panel">
+      <div class="row">
+        <label class="field"><span class="field-label">내용 보이기</span>
+          <select class="select" data-doc-preset="${esc(a.id)}">${DOC_PRESETS.filter(([v]) => v !== 'custom' || preset === 'custom')
+            .map(([v, l]) => `<option value="${v}"${v === preset ? ' selected' : ''}>${l}</option>`)
+            .join('')}</select></label>
+        <label class="field"><span class="field-label">가로 칸 수</span>
+          <select class="select" data-doc-cols="${esc(a.id)}">${[1, 2, 3, 4]
+            .map((c) => `<option value="${c}"${c === a.docCols ? ' selected' : ''}>${c}장씩</option>`)
+            .join('')}</select></label>
+      </div>
+      <p class="doc-hint">쪽을 눌러 넣거나 뺄 수 있어요 · ${total}쪽 중 ${chosen.size}쪽 선택${
+        total > a.pages.length ? ` (앞 ${a.pages.length}쪽까지만 그림으로 만들었어요)` : ''
+      }</p>
+      <div class="doc-thumbs">${a.pages
+        .map(
+          (pg, i) => `<button type="button" class="doc-thumb${chosen.has(i) ? ' is-on' : ''}" data-action="toggle-doc-page" data-id="${esc(a.id)}" data-page="${i}" aria-pressed="${chosen.has(i)}">
+            <img src="${esc(displayUrl(pg))}" alt="" loading="lazy" /><span>${i + 1}</span></button>`
+        )
+        .join('')}</div>
+    </div></li>`;
+}
+
 function workDetailHtml(state, w) {
   const isProject = w.entryType === 'project';
-  const photos = getWorkPhotos(w);
+  const photos = getWorkVisuals(w);
   const semesters = [['1학기', '1학기'], ['2학기', '2학기']];
   if (w.semester && !semesters.some(([v]) => v === w.semester)) semesters.push([w.semester, w.semester]);
   const months = [['', '월 선택'], ...SCHOOL_YEAR_MONTHS.map((m) => [m, m])];
@@ -414,24 +495,25 @@ function workDetailHtml(state, w) {
 
     <div class="field">
       <span class="field-label">사진 · 파일 올리기<span class="field-hint"> · 눌러서 고르거나 끌어다 놓으세요</span></span>
-      <div class="upload-tiles">${uploadTileHtml('art')}${uploadTileHtml('activity')}${uploadTileHtml('file')}</div>
-      <p class="upload-help">사진은 알맞은 크기로 자동으로 줄여져요 · 여러 장을 한꺼번에 골라도 돼요 · 복사한 그림은 Ctrl+V<br />방향이 틀리면 <b>↻</b>, 다른 친구 얼굴을 가리려면 <b>✏️ 고치기</b></p>
-      ${ui.uploading ? `<p class="uploading">⏳ 올리는 중… 잠깐만 기다려 주세요</p>` : ''}
+      <div class="upload-tiles">${uploadTileHtml('art')}${uploadTileHtml('activity')}${uploadTileHtml('video')}${uploadTileHtml('file')}</div>
+      <div class="quick-row">
+        <button type="button" class="btn btn-sm" data-action="camera" data-mode="photo">📷 카메라로 찍기</button>
+        <button type="button" class="btn btn-sm" data-action="camera" data-mode="doc">📄 문서 스캔</button>
+        <button type="button" class="btn btn-sm" data-action="paste-clipboard">📋 캡처 붙여넣기</button>
+      </div>
+      <div class="row upload-options">
+        <label class="field"><span class="field-label">사진 배치</span>${selectBox('work.photoLayout', w.photoLayout, PHOTO_LAYOUT_OPTIONS, '사진 배치')}</label>
+        <label class="field"><span class="field-label">새로 올릴 사진 화질</span>${selectBox(
+          'settings.photoMaxSide',
+          String(state.settings.photoMaxSide),
+          PHOTO_SIZES.map((x) => [String(x.value), x.label]),
+          '사진 화질'
+        )}</label>
+      </div>
+      <p class="upload-help">끌어다 놓기 · 여러 개 한꺼번에 · 캡처한 화면은 Ctrl+V(맥 ⌘+V)로 바로 붙여넣기<br />방향은 <b>↻</b>, 필요한 부분만 <b>✂️</b>, 얼굴 가리기·문서 반듯하게는 <b>✏️ 고치기</b></p>
+      ${ui.uploading ? `<p class="uploading" data-upload-status>⏳ 올리는 중… 잠깐만 기다려 주세요</p>` : ''}
       ${photos.length ? `<ul class="photo-grid">${photos.map(photoItemHtml).join('')}</ul>` : ''}
-      ${
-        w.attachments.length
-          ? `<ul class="file-list">${w.attachments
-              .map(
-                (a) => `<li class="file-item">
-                  <span class="file-badge${isPdfFile(a) ? ' is-pdf' : ''}">${isPdfFile(a) ? 'PDF' : esc((a.name.split('.').pop() || 'FILE').slice(0, 4).toUpperCase())}</span>
-                  <a class="file-name" href="${esc(displayUrl(a))}" target="_blank" rel="noopener"${isPdfFile(a) ? '' : ` download="${esc(a.name)}"`}>${esc(a.name)}</a>
-                  <small>${esc(a.size || '')}</small>
-                  <button type="button" class="file-remove" data-action="remove-file" data-id="${esc(a.id)}" aria-label="${esc(a.name)} 삭제">✕</button>
-                </li>`
-              )
-              .join('')}</ul>`
-          : ''
-      }
+      ${w.attachments.length ? `<ul class="file-list">${w.attachments.map(fileItemHtml).join('')}</ul>` : ''}
     </div>
 
     ${field('무엇을 했나요?', textarea('work.content', w.content, '활동 내용이나 내가 쓴 글을 적어 보세요.\n예: 친구들과 학교 화단에 강낭콩을 심고, 2주 동안 키를 재서 그래프로 그렸다.', 6))}
@@ -503,15 +585,28 @@ function designStepHtml(state) {
       ${exportItemHtml('export-zip', '📦', '압축 파일로 저장 (.zip)', '웹페이지와 사진·첨부파일이 폴더로 나뉘어 담겨요.')}
     </div>
 
-    <h3 class="sub-title">💾 작업 파일</h3>
-    <p class="pane-hint">작업은 이 브라우저에 자동 저장돼요. 학교 컴퓨터를 쓰거나 다른 기기에서 이어서 하려면 백업 파일을 꼭 챙기세요.</p>
+    <h3 class="sub-title" id="project-section">💾 프로젝트 파일 (이어서 편집하기)</h3>
+    <p class="pane-hint">작업은 이 브라우저에 자동 저장돼요. 사진·동영상·PDF까지 모두 담긴 <b>프로젝트 파일(${PROJECT_EXT})</b>로 이 컴퓨터에 저장해 두면, 다른 컴퓨터에서도 ‘열기’로 이어서 할 수 있어요.</p>
     <div class="export-list">
-      ${exportItemHtml('export-backup', '💾', '작업 백업 저장', '.json 파일로 내려받아요.')}
+      ${exportItemHtml(
+        'save-project',
+        '💾',
+        savedFileName(store.getPortfolioId()) ? `저장 (‘${esc(savedFileName(store.getPortfolioId()))}’에 덮어쓰기)` : '프로젝트 파일 저장',
+        canSaveInPlace() ? '처음 한 번 저장할 곳을 고르면, 다음부터는 누르기만 하면 같은 파일에 저장돼요.' : '내려받기 폴더에 저장돼요.'
+      )}
+      ${canSaveInPlace() ? exportItemHtml('save-project-as', '🗂️', '다른 이름으로 저장', '다른 위치나 이름으로 새로 저장해요.') : ''}
       <label class="export-item">
-        <input type="file" accept=".json,application/json" hidden data-upload="backup" />
+        <input type="file" hidden data-upload="project" />
         <span class="export-icon" aria-hidden="true">📂</span>
-        <span class="export-text"><b>백업 불러오기</b><small>저장해 둔 .json 파일을 열어 이어서 편집해요.</small></span>
+        <span class="export-text"><b>프로젝트 파일 열기</b><small>${PROJECT_EXT} 파일(예전 .json 백업도 가능)을 열어요. 지금 포트폴리오는 그대로 두고 새로 열려요.</small></span>
       </label>
+    </div>
+
+    <h3 class="sub-title">📦 저장 공간</h3>
+    <div class="storage-box">
+      <p id="storage-info" class="pane-hint">계산 중…</p>
+      <button type="button" class="btn btn-sm" data-action="shrink-photos">🗜️ 사진 용량 줄이기 (긴 변 1280px로)</button>
+      <p class="pane-hint small">사진이 많아 무거우면 눌러 보세요. 동영상·PDF 원본은 그대로예요.</p>
     </div>
 
     <div class="danger-row">
@@ -618,8 +713,8 @@ function applyMobileView() {
 const SAVE_STATUS_TEXT = {
   saving: '저장 중…',
   saved: '✓ 자동 저장됨',
-  error: '⚠️ 저장 공간이 부족해요. ‘작업 백업 저장’을 해 주세요',
-  unavailable: '⚠️ 이 브라우저에서는 자동 저장이 안 돼요. ‘작업 백업 저장’을 해 주세요'
+  error: '⚠️ 저장 공간이 부족해요. ‘프로젝트 파일 저장’을 해 주세요',
+  unavailable: '⚠️ 이 브라우저에서는 자동 저장이 안 돼요. ‘프로젝트 파일 저장’을 해 주세요'
 };
 
 function showSaveStatus(status) {
@@ -669,10 +764,10 @@ function currentWork() {
   return ui.editingId ? store.getWork(ui.editingId) : null;
 }
 
+const VISUAL_BUCKETS = ['images', 'activityPhotos', 'videos'];
+
 function findPhoto(w, photoId) {
-  if (w.images.some((p) => p.id === photoId)) return 'images';
-  if (w.activityPhotos.some((p) => p.id === photoId)) return 'activityPhotos';
-  return null;
+  return VISUAL_BUCKETS.find((b) => (w[b] || []).some((p) => p.id === photoId)) || null;
 }
 
 function updatePhoto(photoId, fields) {
@@ -699,7 +794,7 @@ function removePhoto(photoId) {
 function toggleKind(photoId) {
   const w = currentWork();
   const from = w && findPhoto(w, photoId);
-  if (!from) return;
+  if (!from || from === 'videos') return;
   const to = from === 'images' ? 'activityPhotos' : 'images';
   const photo = w[from].find((p) => p.id === photoId);
   store.markEdited();
@@ -717,21 +812,21 @@ function makeCover(photoId) {
   schedulePreview();
 }
 
-/** 돌리거나 가린 사진으로 바꿉니다. 새 id를 주어 원래 사진은 저장소에서 지워지게 합니다. */
-function replacePhoto(photoId, result) {
-  const w = currentWork();
+/** 돌리거나 고친 사진으로 바꿉니다. 새 id를 주어 원래 사진은 저장소에서 지워지게 합니다. */
+function replacePhoto(photoId, result, workId = ui.editingId) {
+  const w = store.getWork(workId);
   const bucket = w && findPhoto(w, photoId);
   if (!bucket || !result) return;
   const newId = uid('ph');
   store.markEdited();
   store.updateWork(w.id, {
-    [bucket]: w[bucket].map((p) =>
-      p.id === photoId ? { ...p, id: newId, dataUrl: result.dataUrl, width: result.width, height: result.height } : p
-    ),
+    [bucket]: w[bucket].map((p) => {
+      if (p.id !== photoId) return p;
+      const next = { ...p, id: newId, blob: result.blob, dataUrl: '', width: result.width, height: result.height };
+      return next;
+    }),
     coverPhotoId: w.coverPhotoId === photoId ? newId : w.coverPhotoId
   });
-  renderEditor();
-  schedulePreview();
 }
 
 function photoById(photoId) {
@@ -745,7 +840,9 @@ async function rotatePhoto(photoId) {
   if (!photo || photoBusy) return;
   photoBusy = true;
   try {
-    replacePhoto(photoId, await rotateDataUrl(photo.dataUrl, 90));
+    replacePhoto(photoId, await rotateImage(displayUrl(photo), 90, mediaMime(photo)));
+    renderEditor();
+    schedulePreview();
   } catch (err) {
     console.error(err);
     toast('사진을 돌리지 못했어요.');
@@ -754,15 +851,17 @@ async function rotatePhoto(photoId) {
   }
 }
 
-async function editPhoto(photoId) {
+async function editPhoto(photoId, tool = 'mosaic') {
   const photo = photoById(photoId);
   if (!photo || photoBusy) return;
   photoBusy = true;
   try {
     $('#toast').classList.remove('show');
-    const result = await openPhotoEditor(photo.dataUrl);
+    const result = await openPhotoEditor(displayUrl(photo), { tool, type: mediaMime(photo) });
     if (result) {
       replacePhoto(photoId, result);
+      renderEditor();
+      schedulePreview();
       toast('✨ 고친 사진으로 바꿨어요.');
     }
   } finally {
@@ -777,8 +876,8 @@ async function backfillPhotoSizes() {
   state.works.forEach((w) =>
     ['images', 'activityPhotos'].forEach((b) =>
       w[b].forEach((p) => {
-        if (!(p.width > 0 && p.height > 0) && p.dataUrl) {
-          jobs.push(getImageSize(p.dataUrl).then((size) => ({ w: w.id, b, id: p.id, size })).catch(() => null));
+        if (!(p.width > 0 && p.height > 0) && (p.blob || p.dataUrl)) {
+          jobs.push(getImageSize(displayUrl(p)).then((size) => ({ w: w.id, b, id: p.id, size })).catch(() => null));
         }
       })
     )
@@ -802,63 +901,115 @@ function removeFile(fileId) {
   schedulePreview();
 }
 
+/* ---------- PDF 내용 보이기 설정 ---------- */
+function updateAttachment(attId, fn) {
+  const w = currentWork();
+  if (!w) return;
+  store.markEdited();
+  store.updateWork(w.id, { attachments: w.attachments.map((a) => (a.id === attId ? fn(a) : a)) });
+  renderEditor();
+  schedulePreview();
+}
+
+const PRESET_SPEC = { none: [2, 0], '1x1': [1, 1], '2x1': [2, 2], '2x2': [2, 4], '3x2': [3, 6], '3x3': [3, 9], all2: [2, Infinity], all3: [3, Infinity] };
+
+function setDocPreset(attId, preset) {
+  const spec = PRESET_SPEC[preset];
+  if (!spec) return;
+  updateAttachment(attId, (a) => ({ ...a, docCols: spec[0], docPages: (a.pages || []).slice(0, spec[1]).map((_, i) => i) }));
+}
+
+function setDocCols(attId, cols) {
+  updateAttachment(attId, (a) => ({ ...a, docCols: Math.min(4, Math.max(1, cols)) }));
+}
+
+function toggleDocPage(attId, page) {
+  updateAttachment(attId, (a) => {
+    const set = new Set(a.docPages || []);
+    if (set.has(page)) set.delete(page);
+    else set.add(page);
+    return { ...a, docPages: [...set].sort((x, y) => x - y) };
+  });
+}
+
+/** 예전에 올렸던 PDF도 내용이 보이게 쪽 그림을 만듭니다. */
+async function renderPdfFor(attId) {
+  const w = currentWork();
+  const att = w?.attachments.find((a) => a.id === attId);
+  if (!att) return;
+  const blob = att.blob || (att.dataUrl ? dataUrlToBlob(att.dataUrl) : null);
+  if (!blob) return;
+  ui.uploading++;
+  renderEditor();
+  try {
+    const { attachments, problems } = await ingestFiles([new File([blob], att.name, { type: 'application/pdf' })], {
+      onProgress: (t) => toast(t, { sticky: true })
+    });
+    const made = attachments[0];
+    if (made?.pages?.length) {
+      updateAttachment(attId, (a) => ({ ...a, pages: made.pages, pageCount: made.pageCount, docCols: made.docCols, docPages: made.docPages }));
+      toast('📄 PDF 내용이 포트폴리오에 보여요.');
+    } else {
+      toast(problems.join(' ') || 'PDF 내용을 그림으로 만들지 못했어요.', { duration: 6000 });
+    }
+  } finally {
+    ui.uploading--;
+    renderEditor();
+  }
+}
+
 /**
- * 사진·파일을 한 활동에 올립니다.
- * kind: 'art'(작품 사진) | 'activity'(활동 사진) | 'file'(PDF·파일)
- * 사진은 자동으로 크기를 줄이고, 사진이 아닌 파일은 어느 칸에 넣어도 첨부파일이 됩니다.
- * 'file' 칸에 사진을 넣으면 작품 사진으로 들어갑니다.
+ * 사진·동영상·파일을 한 활동에 올립니다.
+ * kind: 'art'(작품 사진) | 'activity'(활동 사진) | 'video' | 'file'
+ * 사진은 화질 설정에 맞춰 줄이고, 동영상은 동영상 칸, PDF·파일은 첨부파일로 들어갑니다.
+ * 동영상·파일 칸에 사진을 넣으면 작품 사진으로 들어갑니다.
  */
 async function addFilesToWork(workId, fileList, kind = 'art') {
   const files = Array.from(fileList || []);
   if (!files.length || !workId) return;
-  const bucket = UPLOAD_KINDS[kind]?.bucket || 'images';
+  const bucket = kind === 'activity' ? 'activityPhotos' : 'images';
+  const need = estimateStoredBytes(files);
+  if (!(await store.hasRoomFor(need))) {
+    toast(`⚠️ 이 컴퓨터 브라우저의 저장 공간이 부족해요(${formatBytes(need)} 필요). ‘사진 용량 줄이기’를 하거나 프로젝트 파일로 저장한 뒤 정리해 주세요.`, {
+      duration: 9000
+    });
+    return;
+  }
   store.markEdited();
   ui.uploading++;
   if (ui.editingId === workId) renderEditor();
-  toast(`올리는 중… (0/${files.length})`, { sticky: true });
+  const status = (t) => {
+    toast(t, { sticky: true });
+    const el = $('[data-upload-status]');
+    if (el) el.textContent = `⏳ ${t}`;
+  };
+  status(`올리는 중… (0/${files.length})`);
 
-  const photos = [];
-  const attachments = [];
-  const problems = [];
-  for (const [i, file] of files.entries()) {
-    try {
-      if (isImageFile(file)) {
-        photos.push({ id: uid('ph'), name: file.name, caption: '', ...(await prepareImage(file)) });
-      } else if (file.size > MAX_ATTACHMENT_BYTES) {
-        problems.push(`${file.name}: ${formatBytes(MAX_ATTACHMENT_BYTES)}보다 커서 올릴 수 없어요.`);
-      } else {
-        attachments.push({
-          id: uid('att'),
-          name: file.name,
-          size: formatBytes(file.size),
-          mimeType: file.type || (/\.pdf$/i.test(file.name) ? 'application/pdf' : 'application/octet-stream'),
-          dataUrl: await readFileAsDataUrl(file)
-        });
-      }
-    } catch {
-      problems.push(
-        /\.(heic|heif)$/i.test(file.name)
-          ? `${file.name}: 이 브라우저는 아이폰 HEIC 사진을 열 수 없어요. JPG로 바꿔서 올려 주세요.`
-          : `${file.name}: 열 수 없는 파일이에요.`
-      );
-    }
-    toast(`올리는 중… (${i + 1}/${files.length})`, { sticky: true });
+  let result;
+  try {
+    result = await ingestFiles(files, { maxSide: store.getState().settings.photoMaxSide, onProgress: status });
+  } finally {
+    ui.uploading--;
   }
-
-  ui.uploading--;
+  const { photos, videos, attachments, problems } = result;
   const w = store.getWork(workId);
   if (!w) return;
   store.updateWork(workId, {
     [bucket]: [...w[bucket], ...photos],
+    videos: [...w.videos, ...videos],
     attachments: [...w.attachments, ...attachments]
   });
   if (ui.editingId === workId) renderEditor();
   schedulePreview();
 
   const label = bucket === 'activityPhotos' ? '활동 사진' : '작품 사진';
-  const done = [photos.length && `${label} ${photos.length}장`, attachments.length && `파일 ${attachments.length}개`].filter(Boolean);
+  const done = [
+    photos.length && `${label} ${photos.length}장`,
+    videos.length && `동영상 ${videos.length}개`,
+    attachments.length && `파일 ${attachments.length}개`
+  ].filter(Boolean);
   if (problems.length) {
-    toast(`${done.length ? `올렸어요: ${done.join(' · ')}. ` : ''}${problems.join(' ')}`, { duration: 7000 });
+    toast(`${done.length ? `올렸어요: ${done.join(' · ')}. ` : ''}${problems.join(' ')}`, { duration: 8000 });
   } else if (done.length) {
     toast(`🎉 올렸어요! ${done.join(' · ')}`);
   } else {
@@ -866,32 +1017,130 @@ async function addFilesToWork(workId, fileList, kind = 'art') {
   }
 }
 
-async function startWorkWithFiles(fileList) {
+async function startWorkWithFiles(fileList, kind = 'art') {
   const files = Array.from(fileList || []);
   if (!files.length) return;
   store.markEdited();
   const id = store.addWork();
   openWork(id);
-  await addFilesToWork(id, files, 'art');
+  await addFilesToWork(id, files, kind);
 }
 
-async function importBackup(file) {
+/** 지금 편집 중인 활동에, 없으면 새 활동을 만들어 넣습니다. */
+async function addFilesAnywhere(files, kind = 'art') {
+  if (!files.length) return;
+  if (ui.step === 'works' && ui.editingId) await addFilesToWork(ui.editingId, files, kind);
+  else await startWorkWithFiles(files, kind);
+}
+
+/* ---------- 카메라 · 붙여넣기 ---------- */
+async function takePhotos(mode) {
+  $('#toast').classList.remove('show');
+  const shots = await openCamera({ mode });
+  const files = shots.map((s) => s.file || new File([s.blob], s.name || 'camera.jpg', { type: s.blob.type || 'image/jpeg' }));
+  if (files.length) await addFilesAnywhere(files, 'art');
+}
+
+function screenshotName(type = 'image/png') {
+  const ext = type.split('/')[1] || 'png';
+  return `캡처_${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.${ext}`;
+}
+
+async function pasteFromClipboard() {
   try {
-    const data = JSON.parse(await file.text());
-    const state = store.getState();
-    if (state.works.length && !state.isSample && !confirm('백업을 불러오면 지금 포트폴리오 내용이 백업 내용으로 바뀌어요. 계속할까요?\n(다른 친구 것이라면 먼저 이름표에서 ‘새 친구 포트폴리오’를 만드세요)')) return;
-    if (!store.importState(data)) {
-      toast('포트폴리오 백업 파일이 아니에요.');
+    if (!navigator.clipboard?.read) throw new Error('unsupported');
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const item of items) {
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (type) {
+        const blob = await item.getType(type);
+        files.push(new File([blob], screenshotName(type), { type }));
+      }
+    }
+    if (!files.length) {
+      toast('복사된 그림이 없어요. 화면을 캡처(윈도우 Win+Shift+S, 맥 ⌘+Ctrl+Shift+4)한 뒤 다시 눌러 주세요.', { duration: 6000 });
       return;
     }
-    ui.editingId = null;
-    setStep('works');
-    schedulePreview();
-    backfillPhotoSizes();
-    toast('📂 백업을 불러왔어요. 이어서 편집하세요!');
+    await addFilesAnywhere(files, 'art');
+  } catch {
+    toast('이 브라우저에서는 버튼으로 붙여넣기가 안 돼요. 키보드로 Ctrl+V(맥은 ⌘+V)를 눌러 주세요.', { duration: 6000 });
+  }
+}
+
+/* ---------- 사진 용량 줄이기 ---------- */
+async function shrinkAllPhotos(button) {
+  const state = store.getState();
+  const targets = [];
+  state.works.forEach((w) => ['images', 'activityPhotos'].forEach((b) => w[b].forEach((p) => targets.push({ w: w.id, p }))));
+  if (!targets.length) return toast('줄일 사진이 없어요.');
+  if (!confirm(`사진 ${targets.length}장을 긴 변 1280px로 줄여 다시 저장할까요?\n화면에서는 거의 차이가 없지만 되돌릴 수는 없어요.`)) return;
+  let saved = 0;
+  let changed = 0;
+  button.disabled = true;
+  try {
+    for (const [i, { w, p }] of targets.entries()) {
+      toast(`사진 줄이는 중… (${i + 1}/${targets.length})`, { sticky: true });
+      const blob = p.blob || (p.dataUrl ? dataUrlToBlob(p.dataUrl) : null);
+      if (!blob || /svg|gif/.test(blob.type)) continue;
+      const r = await shrinkImage(blob, 1280).catch(() => null);
+      if (!r) continue;
+      saved += blob.size - r.blob.size;
+      changed++;
+      replacePhoto(p.id, r, w);
+    }
+  } finally {
+    button.disabled = false;
+  }
+  renderPreview();
+  updateStorageInfo();
+  toast(changed ? `🗜️ 사진 ${changed}장을 줄여 ${formatBytes(saved)}를 아꼈어요.` : '이미 충분히 가벼워요.', { duration: 5000 });
+}
+
+async function updateStorageInfo() {
+  const el = $('#storage-info');
+  if (!el) return;
+  const mine = totalMediaBytes(store.getState());
+  const est = await store.storageEstimate();
+  el.textContent = `이 포트폴리오의 사진·동영상·파일: ${formatBytes(mine)}${
+    est ? ` · 이 브라우저 저장 공간: ${formatBytes(est.usage)} 사용 / 약 ${formatBytes(est.quota)} 가능` : ''
+  }`;
+}
+
+/* ---------- 프로젝트 파일 ---------- */
+async function saveProject(button, saveAs = false) {
+  await store.flush();
+  await runExport(button, '저장하는 중…', async () => {
+    const r = await saveProjectFile(store.getState(), {
+      portfolioId: store.getPortfolioId(),
+      saveAs,
+      onProgress: (pct) => toast(`프로젝트 파일 만드는 중… ${Math.round(pct)}%`, { sticky: true })
+    });
+    if (!r) {
+      $('#toast').classList.remove('show');
+      return;
+    }
+    toast(r.inPlace ? `💾 ‘${r.name}’에 저장했어요.` : `💾 ‘${r.name}’ 파일을 내려받았어요. 잘 보관하세요!`, { duration: 5000 });
+    if (ui.step === 'design') renderEditor();
+  });
+}
+
+async function openProject(file) {
+  try {
+    toast('프로젝트 파일 여는 중…', { sticky: true });
+    const data = await readProjectFile(file);
+    if (!data || !data.profile || !Array.isArray(data.works)) {
+      toast('포트폴리오 프로젝트 파일이 아니에요.');
+      return;
+    }
+    const state = store.getState();
+    const replaceCurrent = state.isSample || (!state.works.length && !state.profile.studentName);
+    if (replaceCurrent) store.importState(data);
+    else await store.openAsNew(data);
+    await afterPortfolioChanged(`📂 ‘${data.profile.studentName || '이름 없음'}’ 포트폴리오를 열었어요. 이어서 편집하세요!`);
   } catch (err) {
     console.error(err);
-    toast('파일을 읽을 수 없어요.');
+    toast('파일을 열 수 없어요. 포트폴리오 프로젝트 파일(.portfolio)인지 확인해 주세요.', { duration: 6000 });
   }
 }
 
@@ -984,7 +1233,28 @@ async function onClick(e) {
       await rotatePhoto(id);
       break;
     case 'edit-photo':
-      await editPhoto(id);
+      await editPhoto(id, el.dataset.tool || 'mosaic');
+      break;
+    case 'camera':
+      await takePhotos(el.dataset.mode);
+      break;
+    case 'paste-clipboard':
+      await pasteFromClipboard();
+      break;
+    case 'render-pdf':
+      await renderPdfFor(id);
+      break;
+    case 'toggle-doc-page':
+      toggleDocPage(id, Number(el.dataset.page));
+      break;
+    case 'shrink-photos':
+      await shrinkAllPhotos(el);
+      break;
+    case 'save-project':
+      await saveProject(el, false);
+      break;
+    case 'save-project-as':
+      await saveProject(el, true);
       break;
     case 'select-template':
       store.setTemplate(id);
@@ -1006,13 +1276,18 @@ async function onClick(e) {
     case 'export-html':
       await runExport(el, '만드는 중…', async () => {
         await store.flush();
-        const name = exportSingleHtmlFile(store.getState());
-        toast(`🎉 ‘${name}’ 파일을 저장했어요.`);
+        const { fileName, skipped } = await exportSingleHtmlFile(store.getState());
+        toast(
+          skipped.length
+            ? `🎉 ‘${fileName}’ 파일을 저장했어요. 용량이 큰 ${skipped.join(', ')}은(는) 썸네일·안내만 넣었어요(ZIP으로 저장하면 원본이 들어가요).`
+            : `🎉 ‘${fileName}’ 파일을 저장했어요.`,
+          { duration: skipped.length ? 9000 : 3000 }
+        );
       });
       break;
     case 'export-zip':
       await runExport(el, '압축하는 중…', async () => {
-        const name = await generatePortfolioZip(store.getState());
+        const name = await generatePortfolioZip(store.getState(), (pct) => toast(`압축하는 중… ${Math.round(pct)}%`, { sticky: true }));
         toast(`🎉 ‘${name}’ 파일을 저장했어요.`);
       });
       break;
@@ -1021,17 +1296,12 @@ async function onClick(e) {
         ui.previewMode = 'pdf';
         renderPreview();
         setTimeout(() => window.print(), 300);
-      });
+      }, previewAssetMap(store.getState()));
       toast(opened ? '새 창에서 인쇄 창이 열려요. ‘PDF로 저장’을 고르세요.' : '인쇄 창에서 ‘PDF로 저장’을 고르세요.', { duration: 5000 });
       break;
     }
-    case 'export-backup': {
-      const name = exportProjectJsonFile(store.getState());
-      toast(`💾 ‘${name}’ 파일을 저장했어요.`);
-      break;
-    }
     case 'load-sample':
-      if (!confirmDiscard('예시를 불러오면 지금 포트폴리오 내용이 사라져요. 계속할까요?\n(필요하면 먼저 ‘작업 백업 저장’을 하세요)')) return;
+      if (!confirmDiscard('예시를 불러오면 지금 포트폴리오 내용이 사라져요. 계속할까요?\n(필요하면 먼저 ‘프로젝트 파일 저장’을 하세요)')) return;
       store.loadSampleData();
       ui.editingId = null;
       setStep('works');
@@ -1044,7 +1314,7 @@ async function onClick(e) {
       await afterPortfolioChanged('✨ 새 포트폴리오를 시작해요! 이름부터 적어 볼까요?');
       break;
     case 'reset-current':
-      if (!confirmDiscard('이 포트폴리오의 내용을 모두 지울까요?\n(필요하면 먼저 ‘작업 백업 저장’을 하세요)')) return;
+      if (!confirmDiscard('이 포트폴리오의 내용을 모두 지울까요?\n(필요하면 먼저 ‘프로젝트 파일 저장’을 하세요)')) return;
       store.resetBlankData();
       await afterPortfolioChanged('포트폴리오를 비웠어요.');
       break;
@@ -1103,6 +1373,10 @@ function onInput(e) {
     } else if (key === 'schoolLevel') {
       store.setSchoolLevel(t.value);
       return;
+    } else if (key === 'settings.photoMaxSide') {
+      store.setPhotoMaxSide(Number(t.value));
+      toast('앞으로 올리는 사진에 적용돼요. 이미 올린 사진은 그대로예요.');
+      return;
     }
     schedulePreview(150);
     return;
@@ -1117,6 +1391,8 @@ function onInput(e) {
 
 async function onChange(e) {
   const t = e.target;
+  if (t.dataset.docPreset) return setDocPreset(t.dataset.docPreset, t.value);
+  if (t.dataset.docCols) return setDocCols(t.dataset.docCols, Number(t.value));
   const kind = t.dataset.upload;
   if (!kind) return;
   const files = Array.from(t.files || []);
@@ -1124,7 +1400,7 @@ async function onChange(e) {
   if (!files.length) return;
   if (UPLOAD_KINDS[kind]) await addFilesToWork(ui.editingId, files, kind);
   else if (kind === 'new') await startWorkWithFiles(files);
-  else if (kind === 'backup') await importBackup(files[0]);
+  else if (kind === 'project') await openProject(files[0]);
 }
 
 const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
@@ -1150,15 +1426,25 @@ async function onDrop(e) {
   const files = Array.from(e.dataTransfer.files || []);
   const kind = zone.dataset.drop;
   if (UPLOAD_KINDS[kind]) await addFilesToWork(ui.editingId, files, kind);
-  else await startWorkWithFiles(files.filter(isImageFile));
+  else await startWorkWithFiles(files);
 }
 
+/**
+ * 캡처한 화면 붙여넣기(Ctrl+V / ⌘+V): 어느 화면에서든 됩니다.
+ * 활동을 편집 중이면 그 활동에, 아니면 새 활동을 만들어 넣습니다.
+ * 글을 쓰는 칸에 '글'을 붙여넣는 경우는 방해하지 않습니다.
+ */
 function onPaste(e) {
-  if (ui.step !== 'works' || !ui.editingId) return;
-  const files = Array.from(e.clipboardData?.files || []).filter(isImageFile);
+  if (document.querySelector('.photo-editor, .camera-modal')) return;
+  const cd = e.clipboardData;
+  const files = Array.from(cd?.files || []).filter(isImageFile);
   if (!files.length) return;
+  const t = e.target;
+  const inTextField = t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text') || t.isContentEditable);
+  if (inTextField && cd.getData('text/plain')) return; // 글과 그림이 함께 복사된 경우는 글 붙여넣기 우선
   e.preventDefault();
-  addFilesToWork(ui.editingId, files, 'art');
+  const named = files.map((f) => (f.name && f.name !== 'image.png' ? f : new File([f], screenshotName(f.type), { type: f.type })));
+  addFilesAnywhere(named, 'art');
 }
 
 function onKeyDown(e) {

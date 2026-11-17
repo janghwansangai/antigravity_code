@@ -400,6 +400,11 @@ class PortfolioStore {
     if (this.db) await this.queueSave();
   }
 
+  /** 프로젝트 파일을 새 포트폴리오로 엽니다(지금 포트폴리오는 그대로 남음). */
+  openAsNew(raw) {
+    return this.startNew({ ...normalizeState(raw), isSample: false });
+  }
+
   /** 새 포트폴리오(빈 것)를 만들어 바꿉니다. 지금 포트폴리오는 그대로 남습니다. */
   createPortfolio() {
     return this.startNew(blankState());
