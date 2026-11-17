@@ -146,3 +146,19 @@ a.btn.btn-primary { color: #FFFFFF; }
   .g-row .btn { flex: 1; }
   .g-viewer-head h2 { font-size: 16px; }
 }
+
+/* ---------- 학생 안내 (설정 화면 맨 위) ---------- */
+.g-student-note { display: flex; gap: 14px; align-items: flex-start; margin: 4px 0 22px; padding: 16px 18px; border-radius: 20px; background: var(--sky-soft); border: 2px solid #BFDFFF; }
+.g-student-face { font-size: 40px; line-height: 1; }
+.g-student-note b { font-family: var(--font-cute); font-weight: 400; font-size: 20px; }
+.g-student-note p { margin: 6px 0 10px; font-size: 14.5px; }
+
+/* ---------- 예전 버전 안내 · 올리기 창 탭 · PDF 보기 ---------- */
+.g-old { margin: 0 0 14px; padding: 10px 14px; border-radius: 14px; background: var(--sun-soft); border: 2px dashed var(--sun); font-size: 14px; }
+.g-tip { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--mint-soft); font-size: 13.5px; }
+.g-tabs { display: flex; gap: 6px; margin-bottom: 12px; padding: 4px; border-radius: 14px; background: var(--bg); }
+.g-tab { flex: 1; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; font-weight: 700; color: var(--muted); cursor: pointer; }
+.g-tab.is-on { background: #FFFFFF; color: var(--text); box-shadow: 0 2px 6px rgba(58, 50, 71, 0.1); }
+.g-form input[type="file"].input { padding: 10px; }
+.g-pdf-pages { height: 100%; overflow-y: auto; padding: 16px 12px 40px; background: #E5E7EB; display: grid; justify-items: center; align-content: start; gap: 14px; }
+.g-pdf-pages img { display: block; width: min(900px, 100%); height: auto; border-radius: 4px; background: #FFFFFF; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); }
