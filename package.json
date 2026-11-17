@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "jszip": "^3.10.2",
-    "pdfjs-dist": "6.4.299"
+    "mediabunny": "1.65.1",
+    "pdfjs-dist": "6.4.299",
+    "qrcode-generator": "2.0.4"
   }
 }

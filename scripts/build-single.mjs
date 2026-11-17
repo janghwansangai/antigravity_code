@@ -25,7 +25,8 @@ await build({
     modulePreload: { polyfill: false },
     chunkSizeWarningLimit: 4000,
     // 파일 하나로 열어야 하므로 PDF 처리(pdf.js)처럼 나중에 불러오는 코드도 한 파일에 넣습니다.
-    rolldownOptions: { output: { codeSplitting: false } }
+    // 단일 파일 버전은 포트폴리오 만들기(index.html)만 담습니다. (갤러리는 인터넷 주소로만 씀)
+    rolldownOptions: { input: resolve(root, 'index.html'), output: { codeSplitting: false } }
   }
 });
 
