@@ -37,6 +37,17 @@ export function attachPortfolioInteractions(root) {
       st.filter = 'all';
     }
     el.setAttribute('data-filter', st.filter);
+
+    // 같은 사진을 두 번 넣지 않으려고 비워 둔 그림(data-pf-same)을 원래 사진 주소로 채움
+    var byId = {};
+    Array.prototype.forEach.call(el.querySelectorAll('[data-pf-id]'), function (m) {
+      // 동영상은 표지 그림(poster) 주소, 그림은 src 주소
+      byId[m.getAttribute('data-pf-id')] = m.tagName === 'VIDEO' ? m.getAttribute('poster') : m.getAttribute('src');
+    });
+    Array.prototype.forEach.call(el.querySelectorAll('[data-pf-same]'), function (m) {
+      var src = byId[m.getAttribute('data-pf-same')];
+      if (src && m.getAttribute('src') !== src) m.setAttribute('src', src);
+    });
     Array.prototype.forEach.call(el.querySelectorAll('[data-pf-filter]'), function (b) {
       var on = b.getAttribute('data-pf-filter') === st.filter;
       b.classList.toggle('is-on', on);
@@ -77,7 +88,23 @@ export function attachPortfolioInteractions(root) {
       return;
     }
 
-    var img = t.closest('.pf-fig img');
+    // 모아 보기의 동영상 썸네일 → 그 활동의 동영상으로 이동해 재생
+    var thumb = t.closest('.pf-album .pf-video img[data-pf-same]');
+    if (thumb && root.contains(thumb)) {
+      var vid = null;
+      Array.prototype.forEach.call(root.querySelectorAll('.pf-works video[data-pf-id]'), function (v) {
+        if (v.getAttribute('data-pf-id') === thumb.getAttribute('data-pf-same')) vid = v;
+      });
+      if (vid) {
+        st.filter = 'all';
+        apply();
+        vid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        try { vid.play(); } catch (err) { /* 자동 재생이 막히면 그대로 */ }
+        return;
+      }
+    }
+
+    var img = t.closest('.pf-fig img, .pf-doc-page');
     if (img && root.contains(img)) {
       openLightbox(img);
       return;
@@ -152,7 +179,7 @@ export function attachPortfolioInteractions(root) {
     big.alt = img.alt || '';
     box.appendChild(big);
 
-    var fig = img.closest('figure');
+    var fig = img.closest('.pf-fig, .pf-doc');
     var cap = fig && fig.querySelector('figcaption');
     if (cap && cap.textContent.trim()) {
       var p = document.createElement('p');

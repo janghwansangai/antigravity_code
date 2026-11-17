@@ -8,9 +8,9 @@
  *
  * IndexedDB 구조 (DB: StudentPortfolioBuilderDB_v2, version 2)
  *   portfolioState  'index'          → { currentId, items: [{ id, studentName, portfolioTitle, updatedAt, workCount, photoCount, isSample }] }
- *                   'pf:<id>'        → 포트폴리오 상태 (사진의 dataUrl은 빈 값)
+ *                   'pf:<id>'        → 포트폴리오 상태 (사진·파일 데이터는 빼고 가벼운 글 정보만)
  *                   'currentPortfolio' (예전 버전 저장본, 처음 열 때 자동으로 옮김)
- *   media           '<id>/<사진id>'  → data URL 문자열
+ *   media           '<id>/<미디어id>' → Blob(파일 그대로). 예전 버전이 저장한 data URL 문자열도 그대로 읽음
  */
 import {
   createSamplePortfolioData,
@@ -19,7 +19,8 @@ import {
   DESIGN_TEMPLATES,
   DEFAULT_TEMPLATE_ID
 } from '../data/sampleData.js';
-import { uid } from '../utils/files.js';
+import { uid, DEFAULT_PHOTO_SIDE, PHOTO_SIZES } from '../utils/files.js';
+import { walkMedia, hasData, stripState } from '../media/model.js';
 
 const DB_NAME = 'StudentPortfolioBuilderDB_v2';
 const DB_VERSION = 2;
@@ -28,7 +29,6 @@ const MEDIA_STORE = 'media';
 const INDEX_KEY = 'index';
 const LEGACY_KEY = 'currentPortfolio';
 const SAVE_DELAY_MS = 600;
-const MEDIA_BUCKETS = ['activityPhotos', 'images', 'attachments'];
 
 const pfKey = (id) => `pf:${id}`;
 const mediaKey = (pid, mid) => `${pid}/${mid}`;
@@ -45,15 +45,35 @@ export function currentSchoolTerm(date = new Date()) {
   return { semester: m >= 3 && m <= 8 ? '1학기' : '2학기', month: `${m}월` };
 }
 
-function normalizeMedia(list, prefix) {
-  return arr(list).map((m) => ({
+const isBlob = (v) => typeof Blob !== 'undefined' && v instanceof Blob;
+
+/** 미디어 조각 하나: 데이터는 blob(파일) 또는 dataUrl(예전 버전) 중 하나 */
+function normalizePiece(m, prefix) {
+  const out = {
     ...m,
     id: str(m.id) || uid(prefix),
-    name: str(m.name),
     dataUrl: str(m.dataUrl),
     ...(m.width > 0 && m.height > 0 ? { width: Number(m.width), height: Number(m.height) } : {})
-  }));
+  };
+  if (!isBlob(m.blob)) delete out.blob;
+  return out;
 }
+
+function normalizeMedia(list, prefix) {
+  return arr(list).map((m) => {
+    const out = { ...normalizePiece(m, prefix), name: str(m.name) };
+    if (m.poster && typeof m.poster === 'object') out.poster = normalizePiece(m.poster, 'poster');
+    else delete out.poster;
+    if (Array.isArray(m.pages)) {
+      out.pages = arr(m.pages).map((pg) => normalizePiece(pg, 'page'));
+      out.docCols = [1, 2, 3, 4].includes(Number(m.docCols)) ? Number(m.docCols) : 2;
+      out.docPages = Array.isArray(m.docPages) ? m.docPages.map(Number).filter((n) => n >= 0 && n < out.pages.length) : [];
+    }
+    return out;
+  });
+}
+
+const PHOTO_LAYOUTS = ['auto', '2', '3', '4'];
 
 export function normalizeWork(w = {}) {
   return {
@@ -71,8 +91,10 @@ export function normalizeWork(w = {}) {
     content: str(w.content),
     reflection: str(w.reflection),
     coverPhotoId: str(w.coverPhotoId),
+    photoLayout: PHOTO_LAYOUTS.includes(String(w.photoLayout)) ? String(w.photoLayout) : 'auto',
     activityPhotos: normalizeMedia(w.activityPhotos, 'ph'),
     images: normalizeMedia(w.images, 'ph'),
+    videos: normalizeMedia(w.videos, 'vid'),
     attachments: normalizeMedia(w.attachments, 'att')
   };
 }
@@ -92,6 +114,8 @@ export function normalizeState(raw) {
   if (!Array.isArray(state.customSubjects)) state.customSubjects = [...SCHOOL_LEVEL_SUBJECTS[state.schoolLevel]];
   if (!Array.isArray(state.customProjects)) state.customProjects = [];
   state.isSample = Boolean(raw.isSample);
+  const side = Number(raw.settings?.photoMaxSide);
+  state.settings = { photoMaxSide: PHOTO_SIZES.some((x) => x.value === side) ? side : DEFAULT_PHOTO_SIDE };
   return state;
 }
 
@@ -104,6 +128,7 @@ export function isWorkEmpty(w) {
     !w.projectName.trim() &&
     !w.activityPhotos.length &&
     !w.images.length &&
+    !w.videos.length &&
     !w.attachments.length
   );
 }
@@ -116,24 +141,8 @@ function blankState() {
   return normalizeState(createBlankPortfolioData());
 }
 
-function eachMedia(state, fn) {
-  state.works.forEach((w) => MEDIA_BUCKETS.forEach((b) => (w[b] || []).forEach((m) => fn(m, w, b))));
-}
-
-/** 저장용 가벼운 사본: 사진·파일의 dataUrl만 비웁니다. */
-function stripMedia(state) {
-  return {
-    ...state,
-    profile: { ...state.profile },
-    works: state.works.map((w) => {
-      const copy = { ...w };
-      MEDIA_BUCKETS.forEach((b) => {
-        copy[b] = (w[b] || []).map((m) => ({ ...m, dataUrl: '' }));
-      });
-      return copy;
-    })
-  };
-}
+const eachMedia = walkMedia;
+const stripMedia = stripState;
 
 function req(r) {
   return new Promise((resolve, reject) => {
@@ -271,8 +280,13 @@ class PortfolioStore {
     const stored = new Set(storedKeys.map((k) => String(k).slice(id.length + 1)));
     const jobs = [];
     eachMedia(state, (m) => {
-      if (!m.dataUrl && stored.has(m.id)) {
-        jobs.push(req(media.get(mediaKey(id, m.id))).then((v) => (m.dataUrl = v || '')));
+      if (!hasData(m) && stored.has(m.id)) {
+        jobs.push(
+          req(media.get(mediaKey(id, m.id))).then((v) => {
+            if (typeof v === 'string') m.dataUrl = v;
+            else if (v) m.blob = v;
+          })
+        );
       }
     });
     await Promise.all(jobs);
@@ -292,7 +306,7 @@ class PortfolioStore {
     const items = [];
     eachMedia(state, (m) => items.push(m));
     const current = new Set(items.map((m) => m.id));
-    const toWrite = items.filter((m) => m.dataUrl && (this.mediaDirty || !this.savedMediaIds.has(m.id)));
+    const toWrite = items.filter((m) => hasData(m) && (this.mediaDirty || !this.savedMediaIds.has(m.id)));
     const toDelete = [...this.savedMediaIds].filter((id) => !current.has(id));
 
     const entry = {
@@ -307,7 +321,7 @@ class PortfolioStore {
 
     const tx = this.db.transaction([STATE_STORE, MEDIA_STORE], 'readwrite');
     const media = tx.objectStore(MEDIA_STORE);
-    toWrite.forEach((m) => media.put(m.dataUrl, mediaKey(pid, m.id)));
+    toWrite.forEach((m) => media.put(m.blob || m.dataUrl, mediaKey(pid, m.id)));
     toDelete.forEach((id) => media.delete(mediaKey(pid, id)));
     const states = tx.objectStore(STATE_STORE);
     states.put(stripMedia(state), pfKey(pid));
@@ -386,6 +400,11 @@ class PortfolioStore {
     if (this.db) await this.queueSave();
   }
 
+  /** 프로젝트 파일을 새 포트폴리오로 엽니다(지금 포트폴리오는 그대로 남음). */
+  openAsNew(raw) {
+    return this.startNew({ ...normalizeState(raw), isSample: false });
+  }
+
   /** 새 포트폴리오(빈 것)를 만들어 바꿉니다. 지금 포트폴리오는 그대로 남습니다. */
   createPortfolio() {
     return this.startNew(blankState());
@@ -452,6 +471,28 @@ class PortfolioStore {
     if (!DESIGN_TEMPLATES.some((t) => t.id === templateId)) return;
     this.state.selectedTemplate = templateId;
     this.changed();
+  }
+
+  setPhotoMaxSide(side) {
+    if (!PHOTO_SIZES.some((x) => x.value === side)) return;
+    this.state.settings = { ...this.state.settings, photoMaxSide: side };
+    this.changed();
+  }
+
+  /** 이 컴퓨터 브라우저 저장 공간: { usage, quota } (모르면 null) */
+  async storageEstimate() {
+    try {
+      const est = await navigator.storage?.estimate?.();
+      return est && est.quota ? { usage: est.usage || 0, quota: est.quota } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** bytes만큼 더 저장할 공간이 있는지 (모르면 true) */
+  async hasRoomFor(bytes) {
+    const est = await this.storageEstimate();
+    return !est || est.usage + bytes < est.quota * 0.92;
   }
 
   setSchoolLevel(level) {

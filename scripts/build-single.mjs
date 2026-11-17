@@ -22,7 +22,10 @@ await build({
     emptyOutDir: true,
     assetsInlineLimit: 100_000_000,
     cssCodeSplit: false,
-    modulePreload: { polyfill: false }
+    modulePreload: { polyfill: false },
+    chunkSizeWarningLimit: 4000,
+    // 파일 하나로 열어야 하므로 PDF 처리(pdf.js)처럼 나중에 불러오는 코드도 한 파일에 넣습니다.
+    rolldownOptions: { output: { codeSplitting: false } }
   }
 });
 

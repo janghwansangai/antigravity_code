@@ -61,25 +61,50 @@ export function getTemplateMeta(id) {
   );
 }
 
+function coverFirst(list, coverId) {
+  const coverIdx = coverId ? list.findIndex((p) => p.id === coverId) : -1;
+  if (coverIdx > 0) list.unshift(...list.splice(coverIdx, 1));
+  return list;
+}
+
 /** 한 활동의 사진 목록: 작품 사진 → 활동 사진 순서, 대표 사진은 맨 앞 */
 export function getWorkPhotos(work) {
   const art = Array.isArray(work?.images) ? work.images : [];
   const activity = Array.isArray(work?.activityPhotos) ? work.activityPhotos : [];
-  const list = [
-    ...art.map((p) => ({ ...p, bucket: 'images', kind: 'art' })),
-    ...activity.map((p) => ({ ...p, bucket: 'activityPhotos', kind: 'activity' }))
-  ];
-  const coverIdx = work?.coverPhotoId ? list.findIndex((p) => p.id === work.coverPhotoId) : -1;
-  if (coverIdx > 0) list.unshift(...list.splice(coverIdx, 1));
-  return list;
+  return coverFirst(
+    [...art.map((p) => ({ ...p, bucket: 'images', kind: 'art' })), ...activity.map((p) => ({ ...p, bucket: 'activityPhotos', kind: 'activity' }))],
+    work?.coverPhotoId
+  );
+}
+
+/** 사진 + 동영상 (화면에 함께 배치되는 것들) */
+export function getWorkVisuals(work) {
+  const videos = Array.isArray(work?.videos) ? work.videos : [];
+  return coverFirst([...getWorkPhotos(work), ...videos.map((v) => ({ ...v, bucket: 'videos', kind: 'video' }))], work?.coverPhotoId);
 }
 
 export function isPdfFile(file) {
   return /pdf/i.test(file?.mimeType || '') || /\.pdf$/i.test(file?.name || '');
 }
 
-function resolveSrc(item, bucket, assetMap) {
-  return (assetMap && assetMap[bucket] && assetMap[bucket][item.id]) || item.dataUrl || '';
+/** 미디어의 주소: assetMap(앱 미리보기 blob 주소, ZIP 안 경로, 단일 파일용 data URL)에서 찾고, 없으면 dataUrl */
+function resolveSrc(item, assetMap) {
+  if (!item) return '';
+  return (assetMap && assetMap[item.id]) || item.dataUrl || '';
+}
+
+/** 격자 배치에서 칸 모양: 사진 대부분이 세로면 3:4, 가로면 4:3, 아니면 정사각형 */
+function gridCellRatio(list) {
+  let land = 0;
+  let port = 0;
+  list.forEach((p) => {
+    const { shape } = photoShape(p);
+    if (shape === 'landscape') land++;
+    else if (shape === 'portrait') port++;
+  });
+  if (land > port && land >= list.length / 2) return 4 / 3;
+  if (port > land && port >= list.length / 2) return 3 / 4;
+  return 1;
 }
 
 /** 대표 사진이 세로이고, 사진들이 전체적으로 세로형이면 → 넓은 화면에서 사진과 글을 나란히 */
@@ -111,20 +136,91 @@ export function photoShape(photo) {
   return { ratio: Math.min(Math.max(r, 0.3), 4), shape: r > 1.15 ? 'landscape' : r < 0.87 ? 'portrait' : 'square' };
 }
 
-function renderFigure(photo, src, altFallback, extraCaption = '') {
+/**
+ * 사진·동영상 한 칸
+ *   ref: true면 데이터를 다시 넣지 않고 같은 사진(data-pf-id)을 가리키기만 합니다(data-pf-same).
+ *        '사진 모아 보기'처럼 같은 사진이 두 번 나오는 곳에서 파일 크기를 줄입니다(화면에서 runtime이 채움).
+ */
+function renderFigure(photo, src, altFallback, extraCaption = '', { assetMap = null, stillVideo = false, ref = false } = {}) {
   const caption = String(photo.caption || '').trim();
   const alt = caption || altFallback || '활동 사진';
-  const figcaption =
-    caption || extraCaption
-      ? `<figcaption>${escapeHtml(caption)}${extraCaption ? `<small>${escapeHtml(extraCaption)}</small>` : ''}</figcaption>`
-      : '';
   const { ratio, shape } = photoShape(photo);
   const size = photo.width > 0 && photo.height > 0 ? ` width="${Math.round(photo.width)}" height="${Math.round(photo.height)}"` : '';
-  return `<figure class="pf-fig" data-kind="${photo.kind === 'activity' ? 'activity' : 'art'}" data-shape="${shape}" style="--r:${ratio.toFixed(3)}"><img src="${escapeUrl(src)}" alt="${escapeHtml(alt)}"${size} />${figcaption}</figure>`;
+  const kind = photo.kind === 'video' ? 'video' : photo.kind === 'activity' ? 'activity' : 'art';
+  let body;
+  let note = '';
+  const pid = escapeHtml(photo.poster?.id || '');
+  const id = escapeHtml(photo.id || '');
+  let still = false;
+  if (kind === 'video') {
+    // 동영상: 화면에서는 재생, 인쇄·PDF에서는 썸네일 그림 (썸네일 데이터는 한 번만 넣음)
+    const poster = escapeUrl(resolveSrc(photo.poster, assetMap));
+    const posterAlt = `alt="${escapeHtml(alt)} (동영상)"${size}`;
+    if (ref) {
+      still = true;
+      body = `<img class="pf-video-poster" data-pf-same="${pid}" ${posterAlt} />`;
+    } else if (stillVideo || !src) {
+      still = true;
+      body = `<img class="pf-video-poster" src="${poster}" data-pf-id="${pid}" ${posterAlt} />`;
+      if (!stillVideo) note = '동영상은 용량이 커서 이 파일에는 썸네일만 넣었어요(ZIP 파일에 원본이 있어요).';
+    } else {
+      body = `<video src="${escapeUrl(src)}" poster="${poster}" data-pf-id="${pid}" controls playsinline preload="metadata"${size}></video><img class="pf-video-poster" data-pf-same="${pid}" ${posterAlt} />`;
+    }
+  } else if (ref) {
+    body = `<img data-pf-same="${id}" alt="${escapeHtml(alt)}"${size} />`;
+  } else {
+    body = `<img src="${escapeUrl(src)}" data-pf-id="${id}" alt="${escapeHtml(alt)}"${size} />`;
+  }
+  const capText = [caption, note].filter(Boolean).join(' ');
+  const figcaption =
+    capText || extraCaption
+      ? `<figcaption>${escapeHtml(capText)}${extraCaption ? `<small>${escapeHtml(extraCaption)}</small>` : ''}</figcaption>`
+      : '';
+  const cls = kind === 'video' ? `pf-fig pf-video${still ? ' is-still' : ''}` : 'pf-fig';
+  return `<figure class="${cls}" data-kind="${kind}" data-shape="${shape}" style="--r:${ratio.toFixed(3)}">${body}${figcaption}</figure>`;
+}
+
+/** 사진·동영상 묶음: 자동(비율 맞춤) 또는 가로 N장 격자 */
+function renderMediaBlock(list, work, assetMap, { className = 'pf-media', stillVideo = false } = {}) {
+  if (!list.length) return '';
+  const layout = ['2', '3', '4'].includes(String(work?.photoLayout)) ? Number(work.photoLayout) : 0;
+  const cls = layout
+    ? `${className} layout-grid cols-${layout}`
+    : `${className} ${mediaCountClass(list.length)}`;
+  const style = layout ? ` style="--cell-r:${gridCellRatio(list).toFixed(3)}"` : '';
+  return `<div class="${cls}"${style}>${list
+    .map((p) => renderFigure(p, resolveSrc(p, assetMap), work?.title, '', { assetMap, stillVideo }))
+    .join('')}</div>`;
+}
+
+/** PDF 내용(쪽 그림) 보이기: 고른 쪽들을 가로 docCols장씩 배열 */
+function renderDocs(attachments, assetMap, { className = 'pf-docs' } = {}) {
+  const docs = attachments.filter((a) => Array.isArray(a.pages) && a.pages.length && Array.isArray(a.docPages) && a.docPages.length);
+  if (!docs.length) return '';
+  return `<div class="${className}">${docs
+    .map((a) => {
+      const cols = [1, 2, 3, 4].includes(a.docCols) ? a.docCols : 2;
+      const pages = a.docPages.map((i) => ({ i, pg: a.pages[i] })).filter((x) => x.pg);
+      const total = a.pageCount || a.pages.length;
+      return `<figure class="pf-doc cols-${cols}"><div class="pf-doc-pages">${pages
+        .map(
+          ({ i, pg }) =>
+            `<img class="pf-doc-page" src="${escapeUrl(resolveSrc(pg, assetMap))}" alt="${escapeHtml(a.name || 'PDF')} ${i + 1}쪽"${
+              pg.width > 0 ? ` width="${Math.round(pg.width)}" height="${Math.round(pg.height)}"` : ''
+            } />`
+        )
+        .join('')}</div><figcaption>📄 ${escapeHtml(a.name || 'PDF')} <small>· 전체 ${total}쪽 중 ${pages.length}쪽</small></figcaption></figure>`;
+    })
+    .join('')}</div>`;
 }
 
 // 첨부파일: PDF는 새 창에서 '열어 보기' + 내려받기 버튼, 그 밖의 파일은 '내려받기'
 function renderFileLink(a, href) {
+  if (!href) {
+    return `<li class="pf-file-item"><span class="pf-file is-missing"><span class="pf-file-icon">FILE</span><span class="pf-file-text"><b>${escapeHtml(
+      a.name || '첨부파일'
+    )}</b><small>용량이 커서 이 파일에는 넣지 않았어요(ZIP 파일에 있어요)</small></span></span></li>`;
+  }
   const pdf = isPdfFile(a);
   const name = escapeHtml(a.name || '첨부파일');
   const ext = pdf ? 'PDF' : escapeHtml(((a.name || '').split('.').pop() || 'FILE').slice(0, 4).toUpperCase());
@@ -142,7 +238,7 @@ function renderWork(work, index, ctx) {
   const title = String(work.title || '').trim() || '제목 없는 활동';
   const tag = isProject ? '프로젝트' : String(work.subject || '').trim() || '교과';
   const when = [work.semester, work.month].filter(Boolean).join(' · ');
-  const photos = getWorkPhotos(work);
+  const photos = getWorkVisuals(work);
   const attachments = Array.isArray(work.attachments) ? work.attachments : [];
 
   const meta = [
@@ -157,16 +253,13 @@ function renderWork(work, index, ctx) {
     isProject && work.linkedSubjects ? `<span>함께한 과목 <b>${escapeHtml(work.linkedSubjects)}</b></span>` : ''
   ].join('');
 
-  const media = photos.length
-    ? `<div class="pf-media ${mediaCountClass(photos.length)}">${photos
-        .map((p) => renderFigure(p, resolveSrc(p, p.bucket, ctx.assetMap), title))
-        .join('')}</div>`
-    : '';
+  const media = renderMediaBlock(photos, { ...work, title }, ctx.assetMap);
+  const docs = renderDocs(attachments, ctx.assetMap);
 
   const content = String(work.content || '').trim();
   const reflection = String(work.reflection || '').trim();
   const files = attachments.length
-    ? `<ul class="pf-files">${attachments.map((a) => renderFileLink(a, resolveSrc(a, 'attachments', ctx.assetMap))).join('')}</ul>`
+    ? `<ul class="pf-files">${attachments.map((a) => renderFileLink(a, resolveSrc(a, ctx.assetMap))).join('')}</ul>`
     : '';
 
   const text =
@@ -182,7 +275,7 @@ function renderWork(work, index, ctx) {
     'pf-work',
     photos.length ? 'has-media' : 'no-media',
     photos.length ? `cover-${photoShape(photos[0]).shape}` : '',
-    isPortraitSet(photos) ? 'portrait-set' : '',
+    isPortraitSet(photos) && work.photoLayout === 'auto' ? 'portrait-set' : '',
     text ? 'has-text' : '',
     ctx.markFirst && index === 0 ? 'is-current' : ''
   ]
@@ -193,7 +286,7 @@ function renderWork(work, index, ctx) {
 <header class="pf-head"><div class="pf-meta">${meta}</div><h2 class="pf-work-title">${escapeHtml(title)}</h2>${
     roles ? `<p class="pf-role">${roles}</p>` : ''
   }</header>
-${media}${text}
+${media}${text}${docs}
 </article>`;
 }
 
@@ -202,10 +295,12 @@ function renderFilters(works) {
   const hasProject = works.some((w) => w.entryType === 'project');
   const hasArt = works.some((w) => (w.images || []).length > 0);
   const hasActivity = works.some((w) => (w.activityPhotos || []).length > 0);
+  const hasVideo = works.some((w) => (w.videos || []).length > 0);
   const buttons = [['all', '전체']];
   if (hasSubject && hasProject) buttons.push(['subject', '교과'], ['project', '프로젝트']);
   if (hasArt) buttons.push(['art', '🎨 작품 모음']);
   if (hasActivity) buttons.push(['activity', '📸 활동 사진']);
+  if (hasVideo) buttons.push(['video', '🎬 동영상']);
   if (buttons.length < 2) return '';
   return `<nav class="pf-filters" aria-label="분류">${buttons
     .map(
@@ -218,8 +313,8 @@ function renderFilters(works) {
 function renderAlbum(works, assetMap) {
   const figures = [];
   works.forEach((w) => {
-    getWorkPhotos(w).forEach((p) => {
-      figures.push(renderFigure(p, resolveSrc(p, p.bucket, assetMap), w.title, w.title || ''));
+    getWorkVisuals(w).forEach((p) => {
+      figures.push(renderFigure(p, '', w.title, w.title || '', { assetMap, ref: true }));
     });
   });
   return figures.length ? `<section class="pf-album" aria-label="사진 모아 보기">${figures.join('')}</section>` : '';
@@ -229,7 +324,7 @@ function renderAlbum(works, assetMap) {
  * 포트폴리오 HTML을 만듭니다.
  * @param {object} state 포트폴리오 상태
  * @param {object} options
- *   assetMap      ZIP 내보내기용: { activityPhotos: {id: path}, images: {...}, attachments: {...} }
+ *   assetMap      미디어 id → 주소 (앱: blob 주소, ZIP: 파일 경로, 단일 파일: data URL)
  *   emptyMessage  기록이 하나도 없을 때 보여 줄 안내 문구(앱 미리보기용)
  */
 export function renderPortfolioHtml(state, options = {}) {
@@ -351,6 +446,29 @@ export function getPortfolioTemplatesCss() {
 .pf-fig::before { position: absolute; top: 8px; left: 8px; z-index: 1; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: #334155; font-size: 11.5px; font-weight: 700; line-height: 1.6; pointer-events: none; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
 .pf-fig[data-kind="art"]::before { content: "🎨 작품"; }
 .pf-fig[data-kind="activity"]::before { content: "📸 활동"; }
+.pf-fig[data-kind="video"]::before { content: "🎬 동영상"; }
+/* 동영상: 화면에서는 재생, 인쇄할 때는 썸네일 */
+.pf-fig video { display: block; width: 100%; height: auto; aspect-ratio: var(--r, 1.333); object-fit: cover; border-radius: 10px; background: #000; }
+.pf-video .pf-video-poster { display: none; }
+.pf-video.is-still .pf-video-poster { display: block; }
+.pf-video.is-still::after { content: "▶"; position: absolute; left: 50%; top: calc(50% - 14px); transform: translate(-50%, -50%); width: 52px; height: 52px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); color: #FFFFFF; font-size: 22px; line-height: 52px; text-align: center; pointer-events: none; }
+/* 가로 N장 격자: 모든 칸이 같은 크기(마지막 줄도 같은 크기) */
+.pf-media.layout-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pf-media.layout-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pf-media.layout-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pf-media.layout-grid::after { display: none; }
+.pf-media.layout-grid .pf-fig { flex: none; }
+.pf-media.layout-grid .pf-fig img, .pf-media.layout-grid .pf-fig video { aspect-ratio: var(--cell-r, 1); object-fit: cover; }
+/* PDF 내용(쪽 그림) */
+.pf-docs { grid-column: 1 / -1; display: grid; gap: 16px; min-width: 0; }
+.pf-doc { margin: 0; padding: 14px; border-radius: 14px; background: var(--pf-soft); }
+.pf-doc-pages { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.pf-doc.cols-1 .pf-doc-pages { grid-template-columns: minmax(0, 1fr); max-width: 560px; margin: 0 auto; }
+.pf-doc.cols-3 .pf-doc-pages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pf-doc.cols-4 .pf-doc-pages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pf-doc-page { display: block; width: 100%; height: auto; background: #FFFFFF; border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); cursor: zoom-in; }
+.pf-doc figcaption { margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--pf-muted); }
+.pf-doc figcaption small { font-weight: 400; }
 .pf-fig img { width: 100%; height: auto; aspect-ratio: var(--r, 1.333); object-fit: cover; border-radius: 10px; cursor: zoom-in; background: var(--pf-soft); }
 .pf-fig figcaption { margin-top: 6px; font-size: 13px; color: var(--pf-muted); line-height: 1.5; }
 .pf-fig figcaption small { display: block; opacity: 0.8; }
@@ -360,10 +478,12 @@ export function getPortfolioTemplatesCss() {
 .pf[data-filter="project"] .pf-work[data-kind="subject"] { display: none; }
 .pf .pf-album { display: none; --row-h: 220px; gap: 16px; }
 .pf[data-filter="art"] .pf-album, .pf[data-filter="activity"] .pf-album { display: flex; }
-.pf[data-filter="art"] .pf-album .pf-fig[data-kind="activity"],
-.pf[data-filter="activity"] .pf-album .pf-fig[data-kind="art"] { display: none; }
-.pf[data-filter="art"] .pf-works, .pf[data-filter="activity"] .pf-works,
-.pf[data-filter="art"] .pf-slide-nav, .pf[data-filter="activity"] .pf-slide-nav { display: none; }
+.pf[data-filter="video"] .pf-album { display: flex; }
+.pf[data-filter="art"] .pf-album .pf-fig:not([data-kind="art"]),
+.pf[data-filter="activity"] .pf-album .pf-fig:not([data-kind="activity"]),
+.pf[data-filter="video"] .pf-album .pf-fig:not([data-kind="video"]) { display: none; }
+.pf[data-filter="art"] .pf-works, .pf[data-filter="activity"] .pf-works, .pf[data-filter="video"] .pf-works,
+.pf[data-filter="art"] .pf-slide-nav, .pf[data-filter="activity"] .pf-slide-nav, .pf[data-filter="video"] .pf-slide-nav { display: none; }
 
 /* 슬라이드(시안 6) */
 .pf-slide-nav { display: none; }
@@ -683,6 +803,8 @@ export function getPortfolioTemplatesCss() {
   .pf .pf-media, .pf .pf-work .pf-media { --row-h: 150px !important; }
   .pf .pf-media.n-2 { --row-h: 200px !important; }
   .pf .pf-media.n-1 { --row-h: 340px !important; }
+  .pf .pf-media.layout-grid.cols-3, .pf .pf-media.layout-grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf .pf-doc.cols-3 .pf-doc-pages, .pf .pf-doc.cols-4 .pf-doc-pages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pf-t-mag-book .pf-work.has-media .pf-head, .pf-t-mag-book .pf-work.has-media .pf-text { padding-right: 0; }
   .pf-t-mag-book .pf-work.has-media .pf-media { border-left: 0; padding-left: 0; }
   .pf-t-scrapbook .pf-work { transform: none !important; }
@@ -699,6 +821,9 @@ export function getPortfolioTemplatesCss() {
   .pf .pf-works { display: grid !important; }
   .pf .pf-work { display: grid !important; break-inside: avoid; transform: none !important; }
   .pf .pf-album { display: none !important; }
+  .pf-video video { display: none !important; }
+  .pf-video .pf-video-poster { display: block !important; }
+  .pf-doc, .pf-fig { break-inside: avoid; }
   .pf-t-timeline .pf-cover { margin: 0 0 24px; border-radius: 12px; }
   .pf-t-showcase { --pf-bg: #FFFFFF; --pf-text: #18181B; --pf-muted: #52525B; --pf-soft: #F4F4F5; --pf-line: #D4D4D8; --pf-on-accent: #FFFFFF; --pf-accent: #0F766E; }
   .pf-t-showcase .pf-reflection { background: #F4F4F5; }
@@ -739,12 +864,8 @@ export function renderPrintDocumentHtml(state, { assetMap = null } = {}) {
 
   const workHtml = works
     .map((w, i) => {
-      const photos = getWorkPhotos(w);
-      const media = photos.length
-        ? `<div class="pdoc-media ${mediaCountClass(photos.length)}">${photos
-            .map((ph) => renderFigure(ph, resolveSrc(ph, ph.bucket, assetMap), w.title))
-            .join('')}</div>`
-        : '';
+      const media = renderMediaBlock(getWorkVisuals(w), w, assetMap, { className: 'pdoc-media', stillVideo: true });
+      const docs = renderDocs(w.attachments || [], assetMap, { className: 'pdoc-docs' });
       const files = (w.attachments || []).length
         ? `<p class="pdoc-files">첨부파일: ${w.attachments.map((a) => escapeHtml(a.name)).join(', ')}</p>`
         : '';
@@ -757,7 +878,7 @@ export function renderPrintDocumentHtml(state, { assetMap = null } = {}) {
       }</p><h2>${escapeHtml(w.title || '제목 없는 활동')}</h2>${role ? `<p class="pdoc-meta">${escapeHtml(role)}</p>` : ''}</div></header>
 ${media}${w.content ? `<p class="pdoc-content">${escapeHtml(w.content)}</p>` : ''}${
         w.reflection ? `<div class="pdoc-reflection"><strong>배우고 느낀 점</strong><p>${escapeHtml(w.reflection)}</p></div>` : ''
-      }${files}
+      }${docs}${files}
 </article>`;
     })
     .join('');
@@ -811,6 +932,22 @@ export function getPrintDocumentCss() {
 .pdoc-media figure { position: relative; flex: var(--r, 1.333) 1 calc(var(--r, 1.333) * var(--row-h)); min-width: 0; max-width: 100%; break-inside: avoid; }
 .pdoc-media.n-1 figure { flex: 0 1 calc(var(--r, 1.333) * var(--row-h)); }
 .pdoc-media img { display: block; width: 100%; height: auto; aspect-ratio: var(--r, 1.333); object-fit: cover; border-radius: 6px; }
+.pdoc-media.layout-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pdoc-media.layout-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pdoc-media.layout-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pdoc-media.layout-grid::after { display: none; }
+.pdoc-media.layout-grid figure { flex: none; }
+.pdoc-media.layout-grid img { aspect-ratio: var(--cell-r, 1); }
+.pdoc-media figure[data-kind="video"]::before { content: "동영상"; }
+.pdoc-media .pf-video::after { content: "▶"; position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.55); color: #FFF; font-size: 16px; line-height: 40px; text-align: center; }
+.pdoc-docs { display: grid; gap: 12px; margin: 10px 0; }
+.pdoc-docs .pf-doc { margin: 0; break-inside: avoid; }
+.pdoc-docs .pf-doc-pages { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pdoc-docs .pf-doc.cols-1 .pf-doc-pages { grid-template-columns: minmax(0, 1fr); max-width: 420px; margin: 0 auto; }
+.pdoc-docs .pf-doc.cols-3 .pf-doc-pages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pdoc-docs .pf-doc.cols-4 .pf-doc-pages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pdoc-docs .pf-doc-page { display: block; width: 100%; height: auto; border: 1px solid #E2E8F0; }
+.pdoc-docs figcaption { font-size: 11.5px; color: #64748B; margin-top: 4px; }
 .pdoc-media figure::before { position: absolute; top: 6px; left: 6px; padding: 0 6px; border-radius: 999px; background: rgba(255,255,255,0.9); font-size: 10.5px; font-weight: 700; color: #334155; }
 .pdoc-media figure[data-kind="art"]::before { content: "작품"; }
 .pdoc-media figure[data-kind="activity"]::before { content: "활동"; }
