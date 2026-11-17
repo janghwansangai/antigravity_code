@@ -31,7 +31,7 @@ import { PHOTO_SIZES, dataUrlToBlob, formatBytes, getImageSize, isImageFile, rot
 import { openPhotoEditor } from './editor/photoEditor.js';
 import { openCamera } from './editor/camera.js';
 import { ingestFiles, estimateStoredBytes } from './media/ingest.js';
-import { connectGallery, copyShareLink, forgetGallery, gallerySectionHtml, hydrateGallerySection, openShareModal } from './share/galleryShare.js';
+import { connectGallery, copyShareLink, gallerySectionHtml, hydrateGallerySection, openShareModal, setChangingGallery } from './share/galleryShare.js';
 import { VIDEO_SIZES, DEFAULT_VIDEO_SIDE, canCompressVideo, compressVideo, renameForType } from './utils/videoCompress.js';
 import { mediaMime, totalMediaBytes, walkMedia } from './media/model.js';
 import { PROJECT_EXT, canSaveInPlace, readProjectFile, saveProjectFile, savedFileName } from './project/projectFile.js';
@@ -597,6 +597,9 @@ function designStepHtml(state) {
       ${exportItemHtml('export-zip', '📦', '압축 파일로 저장 (.zip)', '웹페이지와 사진·첨부파일이 폴더로 나뉘어 담겨요.')}
     </div>
 
+    <h3 class="sub-title" id="gallery-section">🌈 우리 반 갤러리</h3>
+    ${gallerySectionHtml(exportItemHtml)}
+
     <h3 class="sub-title" id="project-section">💾 프로젝트 파일 (이어서 편집하기)</h3>
     <p class="pane-hint">작업은 이 브라우저에 자동 저장돼요. 사진·동영상·PDF까지 모두 담긴 <b>프로젝트 파일(${PROJECT_EXT})</b>로 이 컴퓨터에 저장해 두면, 다른 컴퓨터에서도 ‘열기’로 이어서 할 수 있어요.</p>
     <div class="export-list">
@@ -613,9 +616,6 @@ function designStepHtml(state) {
         <span class="export-text"><b>프로젝트 파일 열기</b><small>${PROJECT_EXT} 파일(예전 .json 백업도 가능)을 열어요. 지금 포트폴리오는 그대로 두고 새로 열려요.</small></span>
       </label>
     </div>
-
-    <h3 class="sub-title" id="gallery-section">🌈 우리 반 갤러리</h3>
-    ${gallerySectionHtml(exportItemHtml)}
 
     <h3 class="sub-title">📦 저장 공간</h3>
     <div class="storage-box">
@@ -676,6 +676,17 @@ async function openSwitcher() {
 
 function closeSwitcher() {
   $('#switcher').hidden = true;
+}
+
+/** 다른 갤러리로 바꾸기: 주소 칸을 보여 주고 그 자리로 이동 (새 주소로 연결될 때까지 지금 갤러리는 그대로) */
+function startGalleryChange() {
+  setChangingGallery(true);
+  if (ui.step !== 'design') setStep('design');
+  else renderEditor();
+  requestAnimationFrame(() => {
+    $('#gallery-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('#gallery-address')?.focus({ preventScroll: true });
+  });
 }
 
 function closeShare() {
@@ -1422,11 +1433,15 @@ async function onClick(e) {
       if (await connectGallery($)) setTimeout(() => renderEditor(), 900);
       break;
     case 'gallery-change':
-      if (confirm('지금 연결된 갤러리 대신 다른 갤러리 주소를 넣을까요? (이미 올린 작품은 그대로예요)')) {
-        forgetGallery();
-        renderEditor();
-        requestAnimationFrame(() => $('#gallery-address')?.focus());
-      }
+      startGalleryChange();
+      break;
+    case 'gallery-change-cancel':
+      setChangingGallery(false);
+      renderEditor();
+      break;
+    case 'share-change-gallery':
+      closeShare();
+      startGalleryChange();
       break;
     case 'share-gallery':
       await openShareModal({

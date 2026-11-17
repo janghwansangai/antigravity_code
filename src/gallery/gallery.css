@@ -162,3 +162,8 @@ a.btn.btn-primary { color: #FFFFFF; }
 .g-form input[type="file"].input { padding: 10px; }
 .g-pdf-pages { height: 100%; overflow-y: auto; padding: 16px 12px 40px; background: #E5E7EB; display: grid; justify-items: center; align-content: start; gap: 14px; }
 .g-pdf-pages img { display: block; width: min(900px, 100%); height: auto; border-radius: 4px; background: #FFFFFF; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); }
+@media (max-width: 640px) {
+  .g-top-actions { flex-wrap: wrap; }
+  .g-top-actions [data-g="open-add"] { flex: 1 1 100%; order: -1; }
+  .g-top-actions .btn-sm { flex: 1; }
+}

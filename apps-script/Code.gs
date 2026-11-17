@@ -203,7 +203,8 @@ function addItem_(b) {
   if (fileId) {
     try {
       var f = DriveApp.getFileById(fileId);
-      meta = { name: f.getName(), type: fileType_(f.getName(), f.getMimeType()), size: f.getSize() };
+      if (canShow_(f)) meta = { name: f.getName(), type: fileType_(f.getName(), f.getMimeType()), size: f.getSize() };
+      else warning = '이 파일은 드라이브 공유가 ‘제한됨’이라 친구들이 볼 수 없어요. 공유를 ‘링크가 있는 우리 학교 사용자(또는 모든 사용자)’로 바꿔 주세요.';
     } catch (err) {
       warning = '선생님이 이 파일을 열 수 없어요. 드라이브 공유를 ‘링크가 있는 우리 학교 사용자(또는 모든 사용자)’로 바꾸거나 학급 드라이브 폴더에 올려 주세요.';
     }
@@ -367,6 +368,35 @@ function shareFile_(file) {
   }
 }
 
+/**
+ * 갤러리가 보여 줘도 되는 파일인가?
+ *   - 링크로 공유된 파일(모든 사용자·우리 학교 사용자): 원래 링크만 있으면 볼 수 있으므로 OK
+ *   - 갤러리로 올린 파일(작품 폴더 안): OK (학교 설정 때문에 공유가 막혀 있어도)
+ *   - 그 밖의 '제한됨' 파일: 선생님 개인 파일일 수 있으므로 거절
+ */
+function canShow_(file) {
+  try {
+    var a = file.getSharingAccess();
+    if (a === DriveApp.Access.ANYONE || a === DriveApp.Access.ANYONE_WITH_LINK || a === DriveApp.Access.DOMAIN || a === DriveApp.Access.DOMAIN_WITH_LINK) return true;
+  } catch (err) {
+    /* 확인 못 하면 아래로 */
+  }
+  var folders = uploadFolderIds_();
+  if (!folders.length) return false;
+  try {
+    var parents = file.getParents();
+    while (parents.hasNext()) if (folders.indexOf(parents.next().getId()) >= 0) return true;
+  } catch (err) {
+    /* 부모 폴더를 못 읽으면 거절 */
+  }
+  return false;
+}
+
+/** 작품 폴더 번호들('설정'의 폴더, 자동으로 만든 폴더). 만들지는 않음 */
+function uploadFolderIds_() {
+  return [readSettings_().folder, PropertiesService.getScriptProperties().getProperty('UPLOAD_FOLDER_ID')].filter(function (x) { return !!x; });
+}
+
 /** 학생 작품을 저장할 폴더: '설정'의 작품 폴더, 없으면 내 드라이브에 '우리 반 갤러리 작품'을 만들어 씀 */
 function uploadFolder_() {
   var settings = readSettings_();
@@ -437,6 +467,8 @@ function readFileChunk_(p) {
     }
     if (!id) return { ok: false, error: '갤러리에 올라온 드라이브 파일만 볼 수 있어요.' };
     var file = DriveApp.getFileById(id);
+    // 선생님만 볼 수 있는(공유 '제한됨') 파일은 보여 주지 않음 — 선생님 권한으로 남의 비공개 파일을 꺼내 보지 못하게
+    if (!canShow_(file)) return { ok: false, error: '이 파일은 드라이브 공유가 ‘제한됨’이라 갤러리에서 볼 수 없어요. 올린 친구에게 공유 설정을 바꿔 달라고 해 주세요.' };
     meta = { id: id, name: file.getName(), type: fileType_(file.getName(), file.getMimeType()), size: file.getSize() };
     cache.put('meta:' + item, JSON.stringify(meta), 120);
   }
