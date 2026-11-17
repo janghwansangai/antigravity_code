@@ -34,14 +34,15 @@ function loadPdfjs() {
 export async function renderPdfPages(blob, onProgress = () => {}) {
   const pdfjs = await loadPdfjs();
   const data = new Uint8Array(await blob.arrayBuffer());
-  const doc = await pdfjs.getDocument({
+  const task = pdfjs.getDocument({
     data,
     // 글꼴이 들어 있지 않은 한글 PDF를 위해 CMap을 인터넷에서 가져옵니다(없어도 대부분 정상 표시).
     cMapUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
     cMapPacked: true,
     standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
     isEvalSupported: false
-  }).promise;
+  });
+  const doc = await task.promise;
   const pageCount = doc.numPages;
   const total = Math.min(pageCount, MAX_PDF_PAGES);
   const pages = [];
@@ -63,7 +64,8 @@ export async function renderPdfPages(blob, onProgress = () => {}) {
       onProgress(i, total);
     }
   } finally {
-    doc.destroy();
+    // 문서 정리(버전에 따라 이름이 달라 안전하게 호출)
+    await Promise.resolve(task.destroy?.()).catch(() => {});
   }
   return { pageCount, pages };
 }

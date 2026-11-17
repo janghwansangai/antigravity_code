@@ -68,8 +68,8 @@ export function portfolioFileBaseName(state) {
 }
 
 /** 파일 하나 안에 넣을 수 있는 크기 (이보다 큰 동영상·파일은 썸네일·안내로 대신) */
-export const SINGLE_FILE_ITEM_LIMIT = 30 * 1024 * 1024;
-const SINGLE_FILE_TOTAL_LIMIT = 150 * 1024 * 1024;
+export const SINGLE_FILE_ITEM_LIMIT = 15 * 1024 * 1024;
+const SINGLE_FILE_TOTAL_LIMIT = 50 * 1024 * 1024;
 
 /**
  * 사진·PDF·동영상을 페이지 안에 넣을 data URL 주소표를 만듭니다.
