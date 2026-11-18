@@ -1,5 +1,5 @@
 /**
- * 우리 반 작품 갤러리 - 서버 (Google Apps Script) · 버전 3
+ * 우리 반 작품 갤러리 - 서버 (Google Apps Script) · 버전 4
  *
  * 선생님의 구글 시트에 붙여서 '웹 앱'으로 배포합니다.
  *   - 학생: 포트폴리오 앱의 [🚀 갤러리에 공유하기] 또는 갤러리의 [＋ 내 작품 올리기]
@@ -7,6 +7,8 @@
  *           (학생 자신의 구글 드라이브 공유 링크를 붙여 넣는 것도 됨)
  *   - 갤러리: 이 웹 앱에서 목록·썸네일·작품 파일을 받아 보여 줌
  *   - 선생님: 시트에서 줄을 지우거나 '숨김' 칸에 TRUE를 적으면 갤러리에서 사라짐
+ *             갤러리 화면의 🔑 선생님(설정 탭의 '선생님 관리 코드')으로 작품·댓글을 바로 지울 수도 있음
+ *   - 💬 댓글: 작품마다 댓글('댓글' 탭에 쌓임). 학생이 작품을 새 파일로 바꿔 올려도 댓글은 그대로
  *
  * 🔒 보안: 함께 붙여 넣는 appsscript.json이 이 코드가 쓸 수 있는 권한을 딱 세 가지로 묶습니다.
  *   - spreadsheets.currentonly : 이 시트 하나만 (다른 스프레드시트는 못 봄)
@@ -17,20 +19,30 @@
  *
  * 설정은 '설정' 탭에서 바꿉니다(처음 실행할 때 자동으로 만들어짐).
  *   갤러리 제목 | 학급 코드 | 올리기 허용 | 작품 폴더(자동, 드라이브에서 원하는 곳으로 옮겨도 됨) | 파일 링크 공유 | 저장 용량 한도(GB)
+ *   | 댓글 허용 | 선생님 관리 코드(자동으로 만듦, 바꿔도 됨)
  *
  * 처음 설치(자세한 안내는 갤러리 만들기 화면):
- *   1) 이 코드와 appsscript.json 붙여넣기 → 💾 저장
- *   2) 함수 목록에서 '준비하기' → ▶ 실행 → 권한 허용
- *   3) 배포 → 새 배포 → 웹 앱(실행 사용자 '나', 액세스 '모든 사용자') → 웹 앱 URL 복사
+ *   ⭐ 쉬운 방법: 갤러리 템플릿 시트를 '사본 만들기' → 확장 프로그램 → Apps Script → 배포 → 새 배포 → 웹 앱
+ *      (실행 사용자 '나', 액세스 '모든 사용자') → 권한 허용 → 웹 앱 URL 복사. 코드 붙여넣기 필요 없음.
+ *   직접 만들기: 이 코드와 appsscript.json 붙여넣기 → 💾 저장 → 위와 같이 배포
+ *   첫 연결 때 작품 폴더·선생님 관리 코드·권한 확인이 저절로 준비됩니다('준비하기'는 실행하지 않아도 됨).
+ *   시트를 복사해 새 갤러리를 만들면, 복사본은 관리 코드·작품 폴더를 새로 만듭니다(원본과 섞이지 않음).
  * 코드를 바꾼 뒤: '준비하기' ▶ 실행 → 배포 → 배포 관리 → ✏️ 수정 → 버전 '새 버전' → 배포 (주소는 그대로)
  */
 
-var VERSION = 3;
+var VERSION = 4;
 var ITEMS_SHEET = '작품';
 var SETTINGS_SHEET = '설정';
 var HEADERS = ['올린 시간', '번호', '이름', '제목', '링크', '설명', '숨김', '삭제 열쇠', '파일 이름', '파일 종류', '파일 크기', '올린 방식', '썸네일'];
 var COL = { time: 0, id: 1, name: 2, title: 3, link: 4, desc: 5, hidden: 6, token: 7, fileName: 8, fileType: 9, size: 10, via: 11, thumb: 12 };
-var MAX = { name: 20, title: 60, link: 500, desc: 200, fileName: 120, thumb: 45000 };
+var MAX = { name: 20, title: 60, link: 500, desc: 200, fileName: 120, thumb: 45000, comment: 300 };
+var COMMENTS_SHEET = '댓글';
+var C_HEADERS = ['올린 시간', '댓글 번호', '작품 번호', '이름', '내용', '숨김', '삭제 열쇠'];
+var CCOL = { time: 0, id: 1, item: 2, name: 3, text: 4, hidden: 5, token: 6 };
+var MAX_COMMENTS = 20000; // 갤러리 전체 댓글 수
+var COMMENTS_SHOWN = 200; // 작품 하나에 보여 주는 최근 댓글 수
+var ADMIN_FAIL_PER_MIN = 10; // 관리 코드를 1분에 이만큼 틀리면 잠시 막음
+var CACHE_PART = 25000; // 캐시 한 칸(100KB)에 한글이 넘치지 않게 나눠 담는 글자 수
 var MAX_ITEMS = 2000;
 var VIEW_TYPES = { zip: true, portfolio: true, html: true, pdf: true }; // 📖 보기로 펼칠 수 있는 종류
 var MAX_VIEW_BYTES = 200 * 1024 * 1024; // 보기로 받을 수 있는 최대 크기
@@ -53,19 +65,66 @@ var SAFE_SCOPES = [
 
 /** 처음 한 번(그리고 코드를 바꾼 뒤): 위 함수 목록에서 이 함수를 고르고 ▶ 실행 → 권한 허용 */
 function 준비하기() {
-  readSettings_();
-  itemsSheet_();
-  var check = checkScopes_();
-  var folderId = uploadFolder_();
-  var props = PropertiesService.getScriptProperties();
-  props.setProperty('READY', String(VERSION));
-  props.setProperty('SAFE_SCOPES', check.safe ? '1' : '0');
-  CacheService.getScriptCache().remove('list');
-  Logger.log('작품 폴더: ' + folderUrl_(folderId));
+  var r = ensureReady_(true);
+  var check = r.check;
+  Logger.log('작품 폴더: ' + folderUrl_(r.folderId));
   Logger.log(check.safe
     ? '🔒 권한 확인 완료: 이 시트와 갤러리가 만든 파일만 다룹니다(선생님 드라이브의 다른 파일은 볼 수 없음).'
     : '⚠️ 권한이 너무 넓어요: ' + check.extra.join(', ') + ' — appsscript.json을 갤러리 안내대로 붙여 넣고 다시 실행해 주세요.');
   if (!check.safe) throw new Error('appsscript.json 설정을 확인해 주세요(권한이 너무 넓음).');
+}
+
+/**
+ * 처음 한 번 준비(첫 목록 요청 때 저절로 실행): 탭·작품 폴더·관리 코드 만들기, 실제 권한 확인
+ * force가 아니면 이미 준비된 경우 아무것도 하지 않음
+ */
+function ensureReady_(force) {
+  var props = PropertiesService.getScriptProperties();
+  var cache = CacheService.getScriptCache();
+  var done = function () {
+    return props.getProperty('READY') === String(VERSION) && props.getProperty('SAFE_SCOPES') === '1';
+  };
+  if (!force && done()) return null;
+  // 권한이 아직 넓다고 나왔으면(appsscript.json 빠짐) 10분마다만 다시 확인
+  if (!force && props.getProperty('READY') === String(VERSION) && cache.get('scopeCheck')) return null;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return null; // 동시에 처음 열려도 폴더를 두 번 만들지 않게
+  try {
+    if (!force && done()) return null;
+    readSettings_();
+    itemsSheet_();
+    commentsSheet_();
+    var check = checkScopes_();
+    var folderId = check.safe || force ? uploadFolder_() : '';
+    props.setProperty('READY', String(VERSION));
+    props.setProperty('SAFE_SCOPES', check.safe ? '1' : '0');
+    cache.put('scopeCheck', '1', 600);
+    cache.remove('list');
+    return { check: check, folderId: folderId };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 시트를 복사해 만든 갤러리인지 확인 → 복사본이면 관리 코드·작품 폴더·준비 상태를 새로
+ * (원본의 관리 코드나 폴더를 그대로 쓰지 않게)
+ */
+function checkCopy_(ss, sheet) {
+  var props = PropertiesService.getScriptProperties();
+  var id = ss.getId();
+  var saved = props.getProperty('SHEET_ID');
+  if (saved === id) return;
+  if (saved) {
+    ['READY', 'SAFE_SCOPES', 'UPLOAD_FOLDER_ID', 'ADMIN_INIT'].forEach(function (k) {
+      props.deleteProperty(k);
+    });
+    if (sheet) {
+      sheet.getRange(4, 2, 1, 2).setValues([['', '']]);
+      sheet.getRange(8, 2).setValue('');
+    }
+  }
+  props.setProperty('SHEET_ID', id);
 }
 
 /** '준비하기'와 같음 (함수 목록에 한글 이름이 안 보이면 이것을 실행) */
@@ -108,6 +167,9 @@ function doPost(e) {
     if (body.action === 'upload') return output_(forgetList_(uploadSingle_(body)));
     if (body.action === 'uploadStart') return output_(uploadStart_(body));
     if (body.action === 'uploadChunk') return output_(forgetList_(uploadChunk_(body)));
+    if (body.action === 'comment') return output_(forgetList_(withLock_(function () { return addComment_(body); })));
+    if (body.action === 'deleteComment') return output_(forgetList_(withLock_(function () { return removeComment_(String(body.id || ''), String(body.token || '')); })));
+    if (body.action === 'admin') return output_(forgetList_(withLock_(function () { return admin_(body); })));
     return output_({ ok: false, error: '알 수 없는 요청이에요.' });
   } catch (err) {
     return output_({ ok: false, error: '처리하지 못했어요. 잠시 뒤 다시 해 주세요.' });
@@ -240,18 +302,42 @@ function putChunk_(session, bytes, start, total, mimeType) {
 
 /* ---------------- 목록 ---------------- */
 function cachedList_() {
-  var cache = CacheService.getScriptCache();
-  var hit = cache.get('list');
+  var hit = cacheGetBig_('list');
   if (hit) return JSON.parse(hit);
   var result = listItems_();
-  var json = JSON.stringify(result);
-  if (json.length < 90000) cache.put('list', json, LIST_CACHE_SEC); // 캐시 한 칸은 100KB까지
+  cachePutBig_('list', JSON.stringify(result), LIST_CACHE_SEC);
   return result;
 }
 
 function forgetList_(result) {
   if (result && result.ok) CacheService.getScriptCache().remove('list');
   return result;
+}
+
+/** 캐시 한 칸은 100KB까지라 긴 글(한글은 한 글자 3바이트)은 여러 칸에 나눠 담음 */
+function cachePutBig_(key, text, sec) {
+  var n = Math.ceil(text.length / CACHE_PART);
+  if (n > 40) return; // 너무 크면 캐시하지 않음(그래도 동작)
+  var parts = {};
+  for (var i = 0; i < n; i++) parts[key + ':' + i] = text.substr(i * CACHE_PART, CACHE_PART);
+  var cache = CacheService.getScriptCache();
+  cache.putAll(parts, sec);
+  cache.put(key, String(n), sec); // 조각을 다 넣은 뒤에 개수를 적음
+}
+
+function cacheGetBig_(key) {
+  var cache = CacheService.getScriptCache();
+  var n = Number(cache.get(key));
+  if (!n) return null;
+  var keys = [];
+  for (var i = 0; i < n; i++) keys.push(key + ':' + i);
+  var got = cache.getAll(keys);
+  var text = '';
+  for (var j = 0; j < n; j++) {
+    if (got[keys[j]] == null) return null;
+    text += got[keys[j]];
+  }
+  return text;
 }
 
 function readRows_() {
@@ -266,9 +352,16 @@ function isFileRow_(r) {
 }
 
 function listItems_() {
+  readSettings_(); // 시트를 복사해 만든 갤러리인지 먼저 확인(복사본이면 준비를 새로)
+  try {
+    ensureReady_(false); // 첫 연결 때 한 번만 (그 뒤엔 바로 넘어감)
+  } catch (err) {
+    /* 준비에 실패해도 목록은 보여 줌(연결 확인 화면에 '준비 안 됨'으로 표시) */
+  }
   var settings = readSettings_();
   var rows = readRows_();
   var props = PropertiesService.getScriptProperties();
+  var comments = settings.comments ? readComments_() : {};
   var items = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -285,7 +378,8 @@ function listItems_() {
       size: Number(r[COL.size]) || 0,
       via: isFileRow_(r) ? 'file' : 'link',
       private: String(r[COL.via]) === '파일(비공개)',
-      thumb: !!r[COL.thumb]
+      thumb: !!r[COL.thumb],
+      comments: comments[String(r[COL.id])] || []
     });
   }
   items.reverse(); // 최근 것부터
@@ -299,8 +393,105 @@ function listItems_() {
     open: settings.open,
     canUpload: true,
     maxUpload: MAX_UPLOAD_BYTES,
+    comments: settings.comments,
+    admin: !!settings.adminKey,
     items: items
   };
+}
+
+/** 댓글: { 작품 번호: [{ id, time, name, text }] } (숨긴 댓글 빼고, 오래된 것부터, 작품마다 최근 200개) */
+function readComments_() {
+  var sheet = commentsSheet_();
+  var last = sheet.getLastRow();
+  var rows = last > 1 ? sheet.getRange(2, 1, last - 1, C_HEADERS.length).getValues() : [];
+  var map = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r[CCOL.id] || isTrue_(r[CCOL.hidden])) continue;
+    var item = String(r[CCOL.item]);
+    (map[item] = map[item] || []).push({
+      id: String(r[CCOL.id]),
+      time: r[CCOL.time] instanceof Date ? r[CCOL.time].toISOString() : String(r[CCOL.time]),
+      name: String(r[CCOL.name]),
+      text: String(r[CCOL.text])
+    });
+  }
+  Object.keys(map).forEach(function (k) {
+    if (map[k].length > COMMENTS_SHOWN) map[k] = map[k].slice(-COMMENTS_SHOWN);
+  });
+  return map;
+}
+
+/* ---------------- 💬 댓글 ---------------- */
+function addComment_(b) {
+  var settings = readSettings_();
+  if (!settings.comments) return { ok: false, error: '지금은 댓글이 닫혀 있어요.' };
+  if (settings.code && String(b.code || '').trim() !== settings.code) return { ok: false, error: '학급 코드가 맞지 않아요.', field: 'code' };
+  var item = String(b.item || '');
+  var name = clean_(b.name, MAX.name);
+  var text = clean_(b.text, MAX.comment);
+  if (!/^[\w-]{4,40}$/.test(item)) return { ok: false, error: '작품을 찾을 수 없어요.' };
+  if (!name) return { ok: false, error: '이름을 적어 주세요.', field: 'name' };
+  if (!text) return { ok: false, error: '댓글을 적어 주세요.', field: 'text' };
+  if (tooBusy_()) return { ok: false, error: '지금 글을 쓰는 친구가 아주 많아요. 1분 뒤 다시 눌러 주세요.' };
+  // 갤러리에 보이는(숨기지 않은) 작품에만
+  var rows = readRows_();
+  var found = false;
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][COL.id]) === item && !isTrue_(rows[i][COL.hidden])) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) return { ok: false, error: '작품을 찾을 수 없어요(지워졌을 수 있어요).' };
+  var sheet = commentsSheet_();
+  if (sheet.getLastRow() - 1 >= MAX_COMMENTS) return { ok: false, error: '댓글이 가득 찼어요. 선생님께 말씀드려 주세요.' };
+  var id = 'c' + Utilities.getUuid().replace(/-/g, '').slice(0, 11);
+  var token = Utilities.getUuid();
+  var now = new Date();
+  sheet.appendRow([now, safe_(id), safe_(item), safe_(name), safe_(text), false, safe_(token)]);
+  return { ok: true, token: token, comment: { id: id, time: now.toISOString(), name: name, text: text } };
+}
+
+/** 댓글 지우기: token이 있으면 쓴 사람만, null이면 선생님 */
+function removeComment_(id, token) {
+  if (!id || token === '') return { ok: false, error: '지울 댓글을 찾을 수 없어요.' };
+  var sheet = commentsSheet_();
+  var last = sheet.getLastRow();
+  var rows = last > 1 ? sheet.getRange(2, 1, last - 1, C_HEADERS.length).getValues() : [];
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][CCOL.id]) !== id) continue;
+    if (token !== null && String(rows[i][CCOL.token]) !== token) return { ok: false, error: '내가 쓴 댓글만 지울 수 있어요.' };
+    sheet.deleteRow(i + 2);
+    return { ok: true };
+  }
+  return { ok: false, error: '이미 지워졌어요.' };
+}
+
+/** 작품의 댓글을 모두 지움 (작품을 지울 때) */
+function removeCommentsOf_(item) {
+  var sheet = commentsSheet_();
+  var last = sheet.getLastRow();
+  if (last < 2) return;
+  var rows = sheet.getRange(2, 1, last - 1, C_HEADERS.length).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) if (String(rows[i][CCOL.item]) === item) sheet.deleteRow(i + 2);
+}
+
+/* ---------------- 🔑 선생님(관리 코드) ---------------- */
+function admin_(b) {
+  var settings = readSettings_();
+  var cache = CacheService.getScriptCache();
+  var failKey = 'adminFail:' + Math.floor(Date.now() / 60000);
+  var fails = Number(cache.get(failKey) || 0);
+  if (fails >= ADMIN_FAIL_PER_MIN) return { ok: false, error: '관리 코드를 너무 많이 틀렸어요. 1분 뒤 다시 해 주세요.' };
+  if (!settings.adminKey || String(b.key || '').trim() !== settings.adminKey) {
+    cache.put(failKey, String(fails + 1), 120);
+    return { ok: false, error: '관리 코드가 맞지 않아요. 시트 ‘설정’ 탭의 ‘선생님 관리 코드’를 확인해 주세요.', field: 'key' };
+  }
+  if (b.op === 'check') return { ok: true };
+  if (b.op === 'deleteItem') return removeItem_(String(b.id || ''), null);
+  if (b.op === 'deleteComment') return removeComment_(String(b.id || ''), null);
+  return { ok: false, error: '알 수 없는 요청이에요.' };
 }
 
 /** 썸네일: ?action=thumbs&ids=a,b,c → { thumbs: { a: 'data:image/jpeg;base64,…' } } */
@@ -495,18 +686,26 @@ function finishUpload_(v, info) {
 
 /* ---------------- 지우기(올린 사람만) ---------------- */
 function deleteItem_(b) {
-  var id = String(b.id || '');
-  var token = String(b.token || '');
-  if (!id || !token) return { ok: false, error: '지울 작품을 찾을 수 없어요.' };
+  return removeItem_(String(b.id || ''), String(b.token || ''));
+}
+
+/**
+ * 작품 지우기: token이 있으면 올린 사람만(드라이브 파일은 그대로), null이면 선생님(갤러리가 올린 파일은 휴지통으로)
+ * 그 작품의 댓글도 함께 지움
+ */
+function removeItem_(id, token) {
+  if (!id || token === '') return { ok: false, error: '지울 작품을 찾을 수 없어요.' };
   var sheet = itemsSheet_();
   var rows = readRows_();
   for (var i = rows.length - 1; i >= 0; i--) {
-    if (String(rows[i][COL.id]) === id) {
-      if (String(rows[i][COL.token]) !== token) return { ok: false, error: '내가 올린 작품만 지울 수 있어요.' };
-      sheet.deleteRow(i + 2);
-      forgetItem_(id);
-      return { ok: true };
-    }
+    if (String(rows[i][COL.id]) !== id) continue;
+    if (token !== null && String(rows[i][COL.token]) !== token) return { ok: false, error: '내가 올린 작품만 지울 수 있어요.' };
+    var fileId = token === null && isFileRow_(rows[i]) ? driveId_(String(rows[i][COL.link])) : '';
+    sheet.deleteRow(i + 2);
+    removeCommentsOf_(id);
+    if (fileId) apiJson_('patch', DRIVE + 'files/' + encodeURIComponent(fileId) + '?supportsAllDrives=true', { trashed: true });
+    forgetItem_(id);
+    return { ok: true };
   }
   return { ok: false, error: '이미 지워졌어요.' };
 }
@@ -598,13 +797,26 @@ function itemsSheet_() {
   return sheet;
 }
 
+function commentsSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(COMMENTS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(COMMENTS_SHEET);
+    sheet.appendRow(C_HEADERS);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
 var SETTING_ROWS = [
   ['갤러리 제목', '우리 반 작품 갤러리'],
   ['학급 코드', ''],
   ['올리기 허용', true],
   ['작품 폴더 (자동으로 만듦 · 드라이브에서 원하는 곳으로 옮겨도 됨)', ''],
   ['파일 링크 공유 (TRUE: 링크가 있으면 드라이브에서도 보기 · FALSE: 우리 갤러리에서만 보기)', true],
-  ['저장 용량 한도 (GB)', DEFAULT_TOTAL_GB]
+  ['저장 용량 한도 (GB)', DEFAULT_TOTAL_GB],
+  ['댓글 허용', true],
+  ['선생님 관리 코드 (갤러리 🔑 선생님 → 작품·댓글 지우기. 비우면 끔)', '']
 ];
 
 function readSettings_() {
@@ -614,16 +826,27 @@ function readSettings_() {
     sheet = ss.insertSheet(SETTINGS_SHEET);
     sheet.getRange(1, 1, SETTING_ROWS.length, 2).setValues(SETTING_ROWS);
   }
+  checkCopy_(ss, sheet);
   var v = sheet.getRange(1, 1, SETTING_ROWS.length, 2).getValues();
   // 예전 버전 시트: 빠진 줄만 채움(선생님이 적은 값은 그대로)
   for (var i = 3; i < SETTING_ROWS.length; i++) {
     if (!v[i][0] || (i === 3 && String(v[i][0]).indexOf('비우면') >= 0)) {
       sheet.getRange(i + 1, 1).setValue(SETTING_ROWS[i][0]);
       v[i][0] = SETTING_ROWS[i][0];
-      if (v[i][1] === '' && i > 3) {
+      if (v[i][1] === '' && i > 3 && i !== 7) {
         sheet.getRange(i + 1, 2).setValue(SETTING_ROWS[i][1]);
         v[i][1] = SETTING_ROWS[i][1];
       }
+    }
+  }
+  // 선생님 관리 코드: 처음 한 번만 무작위로 만듦(선생님이 나중에 비우면 '끔'으로 보고 다시 만들지 않음)
+  if (v[7][1] === '') {
+    var props = PropertiesService.getScriptProperties();
+    if (props.getProperty('ADMIN_INIT') !== '1') {
+      var key = 'T' + Utilities.getUuid().replace(/-/g, '').slice(0, 7);
+      sheet.getRange(8, 2).setValue(safe_(key));
+      props.setProperty('ADMIN_INIT', '1');
+      v[7][1] = key;
     }
   }
   var gb = Number(v[5][1]);
@@ -633,7 +856,9 @@ function readSettings_() {
     open: v[2][1] === '' ? true : isTrue_(v[2][1]),
     folder: folderId_(v[3][1]),
     shareFiles: v[4][1] === '' ? true : isTrue_(v[4][1]),
-    maxTotal: (gb > 0 ? gb : DEFAULT_TOTAL_GB) * 1024 * 1024 * 1024
+    maxTotal: (gb > 0 ? gb : DEFAULT_TOTAL_GB) * 1024 * 1024 * 1024,
+    comments: v[6][1] === '' ? true : isTrue_(v[6][1]),
+    adminKey: String(v[7][1] || '').trim()
   };
 }
 

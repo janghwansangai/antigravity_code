@@ -176,3 +176,23 @@ a.btn.btn-primary { color: #FFFFFF; }
 .g-check-msg.is-warn { color: #A6790A; }
 .g-guide-link { margin: 18px 0 0; text-align: center; font-weight: 700; }
 .g-guide-link a { color: var(--primary-dark); }
+
+/* ---------- 💬 댓글 (카드 안에서만 스크롤 → 갤러리 전체가 길어지지 않음) ---------- */
+.g-comments { margin-top: 10px; padding-top: 10px; border-top: 2px dashed var(--line); }
+.g-cm-head { margin: 0 0 6px; font-size: 13px; font-weight: 800; color: var(--muted); }
+.g-cm-head b { color: var(--primary-dark); }
+.g-cm-list { list-style: none; margin: 0 0 8px; padding: 0 2px 0 0; max-height: 150px; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 6px; scrollbar-width: thin; }
+.g-cm-list li { position: relative; padding: 6px 26px 6px 10px; border-radius: 12px; background: var(--bg); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.g-cm-list li b { font-weight: 800; }
+.g-cm-list time { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.g-cm-list .g-cm-empty { padding: 6px 10px; background: none; color: var(--muted); font-size: 13px; }
+.g-cm-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.g-cm-del:hover { background: #FFE4E6; color: var(--danger); }
+.g-cm-form { display: flex; gap: 6px; }
+.g-cm-form .input { flex: 1; min-width: 0; }
+.g-admin-bar { margin: 0 0 14px; padding: 10px 14px; border-radius: 14px; background: var(--grape-soft); border: 2px solid #D9D0FF; font-size: 14px; }
+@media (max-width: 640px) {
+  /* 댓글이 있으면 휴대폰에서는 한 줄에 하나씩(댓글 쓰기 편하게) */
+  .g-grid.has-comments { grid-template-columns: 1fr; }
+  .g-grid.has-comments .g-thumb { aspect-ratio: 16 / 9; }
+}

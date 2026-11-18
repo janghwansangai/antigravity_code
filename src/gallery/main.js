@@ -12,13 +12,13 @@ import './gallery.css';
 import qrcode from 'qrcode-generator';
 import appsScriptSource from '../../apps-script/Code.gs?raw';
 import manifestSource from '../../apps-script/appsscript.json?raw';
-import { addItem, deleteItem, fetchFileBytes, fetchGallery, fetchThumbs, looksLikeScriptUrl, parseGalleryAddress, uploadFile } from './api.js';
+import { templateId } from './config.js';
+import { addComment, addItem, adminCall, deleteComment, deleteItem, fetchFileBytes, fetchGallery, fetchThumbs, looksLikeScriptUrl, parseGalleryAddress, uploadFile } from './api.js';
 import { isValidLink, parseLink } from './links.js';
 import { openBugReport, setBugScreen } from '../utils/bugReport.js';
 
 const root = document.getElementById('gallery-app');
 const $ = (sel) => root.querySelector(sel);
-const REFRESH_MS = 60000;
 /** 📖 갤러리 안에서 바로 펼쳐 볼 수 있는 파일 (ZIP·웹페이지·프로젝트 파일, 새 버전 서버는 PDF도) */
 const VIEWABLE = new Set(['zip', 'portfolio', 'html']);
 const PDF_VIEW_MAX = 40 * 1024 * 1024; // 이보다 큰 PDF는 드라이브 미리보기로
@@ -77,6 +77,11 @@ export function galleryLink(scriptUrl) {
 
 const mineKey = () => `gallery:mine:${state.scriptUrl}`;
 const myPosts = () => mem.get(mineKey(), {});
+const myCommentsKey = () => `gallery:mycm:${state.scriptUrl}`;
+const myComments = () => mem.get(myCommentsKey(), {});
+const adminKeyName = () => `gallery:admin:${state.scriptUrl}`;
+const adminKey = () => (state.data?.admin ? mem.get(adminKeyName(), '') : '');
+const commentsOn = () => state.data?.version >= 4 && state.data.comments;
 
 /* ---------------- 공통 조각 ---------------- */
 let toastTimer;
@@ -176,15 +181,56 @@ function renderSetup() {
         <p>갤러리 코드는 딱 세 가지 권한만 받아요: <b>① 이 시트 하나</b>, <b>② 갤러리가 직접 만든 폴더·파일</b>, <b>③ 파일을 올리고 읽는 연결</b>. 선생님 드라이브의 다른 파일·폴더는 <b>목록도 내용도 볼 수 없어요</b>(구글이 막아 줌). 권한 허용 화면에도 ‘이 앱에서 사용하는 특정 Google Drive 파일만’이라고 나와요.</p>
       </div>
 
-      <ol class="g-steps">
+      ${setupStepsHtml()}
+      <div id="g-setup-result"></div>
+
+      <div class="g-tips">
+        <h2>설정 바꾸기 (시트의 ‘설정’ 탭)</h2>
+        <ul>
+          <li><b>갤러리 제목</b>: 갤러리 맨 위에 보이는 이름</li>
+          <li><b>학급 코드</b>: 적어 두면 코드를 아는 학생만 올릴 수 있어요(낯선 사람이 올리는 것 방지)</li>
+          <li><b>올리기 허용</b>: FALSE로 바꾸면 올리기를 잠시 닫아요</li>
+          <li><b>작품 폴더</b>: 첫 연결 때 갤러리가 만든 폴더 주소가 적혀요. <b>드라이브에서 이 폴더를 원하는 곳(학급 폴더 등)으로 옮기거나 이름을 바꿔도</b> 계속 그 폴더에 저장돼요. (보안 때문에 갤러리는 자기가 만든 폴더에만 저장해요)</li>
+          <li><b>파일 링크 공유</b>: TRUE면 올린 파일 하나하나를 ‘링크가 있는 사람 보기’로 공유(폴더는 공유하지 않음), FALSE면 공유하지 않고 우리 갤러리에서만 보여요</li>
+          <li><b>저장 용량 한도(GB)</b>: 이 갤러리에 올릴 수 있는 전체 용량(기본 3GB)</li>
+          <li><b>댓글 허용</b>: FALSE로 바꾸면 댓글 칸이 사라져요</li>
+          <li><b>선생님 관리 코드</b>: 갤러리 위쪽 <b>🔑 선생님</b>에 이 코드를 적으면 그 기기에서 모든 작품·댓글을 지울 수 있어요(학생에게는 알려 주지 마세요). 바꿔도 되고, 비우면 꺼져요</li>
+          <li>작품 줄을 지우거나 ‘숨김’ 칸에 TRUE를 적으면 갤러리에서 사라져요(‘댓글’ 탭도 같아요)</li>
+        </ul>
+      </div>
+      <p class="g-guide-link"><a href="./guide.html">❓ 사용법 안내 페이지</a> · <button type="button" class="link-btn" data-g="bug">🐞 오류 신고</button></p>
+    </main>
+    <div class="toast" id="g-toast" role="status" aria-live="polite"></div>`;
+}
+
+/** 갤러리 만들기 단계: 템플릿 시트가 있으면 '복사하기'(쉬움), 없으면 '직접 만들기(코드 붙여넣기)' */
+function setupStepsHtml() {
+  const tid = templateId();
+  const deploy = `
+          <b>시트 메뉴 → 확장 프로그램 → Apps Script</b> → 오른쪽 위 파란 <b>배포 → 새 배포</b> → 톱니바퀴 ⚙️에서 <b>웹 앱</b>을 고르고
+          <ul>
+            <li>실행 사용자: <b>나</b></li>
+            <li>액세스 권한이 있는 사용자: <b>모든 사용자</b></li>
+          </ul>
+          → ‘배포’ → <b>액세스 승인</b>(계정 고르기 → ‘Google에서 확인하지 않은 앱’이 나오면 <b>고급 → (프로젝트 이름)(으)로 이동</b> → 허용) → 나오는 <b>웹 앱 URL</b>을 복사해요.
+          <p class="small muted">권한 화면에는 ‘이 스프레드시트’와 ‘이 앱에서 사용하는 특정 Google Drive 파일만’이 나와요. 선생님 드라이브의 다른 파일은 볼 수 없어요. 학교 계정에서 ‘모든 사용자’가 보이지 않으면 학교 관리자가 막아 둔 것이라 개인 구글 계정으로 만들면 됩니다.</p>`;
+  const connect = `
+        <li>
+          <b>웹 앱 URL을 붙여 넣고 연결을 확인해요.</b> 첫 연결 때 작품 폴더·선생님 관리 코드·권한 확인이 저절로 준비돼요.
+          <div class="g-row">
+            <input class="input" id="g-script-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" />
+            <button type="button" class="btn btn-primary" data-g="check">연결 확인</button>
+          </div>
+          <p class="g-check-msg" id="g-check-msg" role="status"></p>
+        </li>`;
+  const manual = `
         <li>
           <b>구글 시트를 원하는 곳에 만들어요.</b>
-          <p>목록이 쌓일 시트예요. 이름은 ‘6학년 3반 작품 갤러리’처럼 정하세요.</p>
           <div class="g-code-actions">
             <a class="btn btn-sm" href="https://sheets.new" target="_blank" rel="noopener">📈 내 드라이브에 바로 만들기 ↗</a>
             <a class="btn btn-sm" href="https://drive.google.com/drive/my-drive" target="_blank" rel="noopener">📁 원하는 폴더에 만들기 ↗</a>
           </div>
-          <p class="small muted">‘원하는 폴더에 만들기’: 드라이브에서 폴더를 열고 <b>＋ 새로 만들기 → Google 스프레드시트</b>. 나중에 드라이브에서 옮겨도 갤러리는 그대로 동작해요.</p>
+          <p class="small muted">드라이브에서 폴더를 열고 ＋ 새로 만들기 → Google 스프레드시트. 나중에 옮겨도 돼요.</p>
         </li>
         <li>
           <b>시트 메뉴 → 확장 프로그램 → Apps Script</b>를 열고, 파일 두 개를 붙여 넣어요.
@@ -204,46 +250,21 @@ function renderSetup() {
           </ol>
           <details class="more"><summary>코드 미리 보기</summary><pre class="g-code">${esc(manifestSource)}</pre><pre class="g-code">${esc(appsScriptSource)}</pre></details>
         </li>
+        <li>${deploy}</li>`;
+  if (!tid) return `<ol class="g-steps">${manual}${connect}</ol>`;
+  return `
+      <ol class="g-steps">
         <li>
-          <b>위쪽 함수 목록에서 ‘준비하기’ → ▶ 실행 → 권한 허용</b>
-          <p class="small muted">‘Google에서 확인하지 않은 앱’이 나오면 <b>고급 → (프로젝트 이름)(으)로 이동</b> → 허용(선생님이 직접 만든 코드라서 나오는 화면이에요). 실행 로그에 <b>🔒 권한 확인 완료</b>와 <b>작품 폴더</b> 주소가 나오면 성공이에요. ⚠️가 나오면 appsscript.json을 다시 확인하세요.</p>
-        </li>
-        <li>
-          <b>오른쪽 위 ‘배포’ → ‘새 배포’</b> → 톱니바퀴에서 <b>웹 앱</b>을 고르고
-          <ul>
-            <li>실행 사용자: <b>나</b></li>
-            <li>액세스 권한이 있는 사용자: <b>모든 사용자</b></li>
-          </ul>
-          → ‘배포’ → 나오는 <b>웹 앱 URL</b>을 복사해요.
-          <p class="small muted">학교 계정에서 ‘모든 사용자’가 보이지 않으면 학교 관리자가 막아 둔 것이에요. 개인 구글 계정으로 시트를 만들면 됩니다.</p>
-          <p class="small muted">이미 만든 갤러리를 새 코드로 바꿀 때: 두 파일을 바꿔 붙여 넣고 ‘준비하기’ ▶ 실행 → <b>배포 → 배포 관리 → ✏️ 수정 → 버전: 새 버전 → 배포</b>. ‘새 배포’를 누르면 주소가 바뀌니 꼭 ‘배포 관리’로 하세요.</p>
-        </li>
-        <li>
-          <b>웹 앱 URL을 붙여 넣고 연결을 확인해요.</b>
-          <div class="g-row">
-            <input class="input" id="g-script-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" />
-            <button type="button" class="btn btn-primary" data-g="check">연결 확인</button>
+          <b>갤러리 시트를 복사해요.</b> 코드와 권한 설정이 이미 들어 있어서 붙여 넣을 것이 없어요.
+          <div class="g-code-actions">
+            <a class="btn btn-primary" id="g-template-copy" href="https://docs.google.com/spreadsheets/d/${esc(tid)}/copy" target="_blank" rel="noopener">📋 갤러리 시트 복사하기 ↗</a>
           </div>
-          <p class="g-check-msg" id="g-check-msg" role="status"></p>
+          <p class="small muted">‘사본 만들기’를 누르면 내 드라이브에 생겨요. 이름을 ‘6학년 3반 작품 갤러리’처럼 바꾸고, 원하는 폴더로 옮겨도 돼요. 반이 여러 개면 반마다 한 번씩 복사하세요.</p>
         </li>
+        <li>${deploy}</li>
+        ${connect}
       </ol>
-      <div id="g-setup-result"></div>
-
-      <div class="g-tips">
-        <h2>설정 바꾸기 (시트의 ‘설정’ 탭)</h2>
-        <ul>
-          <li><b>갤러리 제목</b>: 갤러리 맨 위에 보이는 이름</li>
-          <li><b>학급 코드</b>: 적어 두면 코드를 아는 학생만 올릴 수 있어요(낯선 사람이 올리는 것 방지)</li>
-          <li><b>올리기 허용</b>: FALSE로 바꾸면 올리기를 잠시 닫아요</li>
-          <li><b>작품 폴더</b>: ‘준비하기’ 때 갤러리가 만든 폴더 주소가 적혀요. <b>드라이브에서 이 폴더를 원하는 곳(학급 폴더 등)으로 옮기거나 이름을 바꿔도</b> 계속 그 폴더에 저장돼요. (보안 때문에 갤러리는 자기가 만든 폴더에만 저장해요)</li>
-          <li><b>파일 링크 공유</b>: TRUE면 올린 파일 하나하나를 ‘링크가 있는 사람 보기’로 공유(폴더는 공유하지 않음), FALSE면 공유하지 않고 우리 갤러리에서만 보여요</li>
-          <li><b>저장 용량 한도(GB)</b>: 이 갤러리에 올릴 수 있는 전체 용량(기본 3GB)</li>
-          <li>작품 줄을 지우거나 ‘숨김’ 칸에 TRUE를 적으면 갤러리에서 사라져요</li>
-        </ul>
-      </div>
-      <p class="g-guide-link"><a href="./guide.html">❓ 사용법 안내 페이지</a> · <button type="button" class="link-btn" data-g="bug">🐞 오류 신고</button></p>
-    </main>
-    <div class="toast" id="g-toast" role="status" aria-live="polite"></div>`;
+      <details class="more g-manual"><summary>템플릿 없이 직접 만들기(코드 붙여넣기)</summary><ol class="g-steps">${manual}</ol></details>`;
 }
 
 async function checkConnection() {
@@ -266,7 +287,7 @@ async function checkConnection() {
       data.version >= 3
         ? data.ready && data.safeScopes
           ? ' · 🔒 권한 확인 완료(이 시트와 갤러리가 만든 파일만)'
-          : ' · ⚠️ 아직 ‘준비하기’를 실행하지 않았거나 appsscript.json이 빠졌어요. 3단계를 해 주세요.'
+          : ' · ⚠️ 권한 확인이 안 됐어요. appsscript.json이 빠졌는지 확인하고(직접 만들기 2단계), 10분 뒤 다시 연결 확인을 눌러 주세요.'
         : ' · ⚠️ 예전 버전 코드예요. 새 Code.gs와 appsscript.json으로 바꿔 주세요(보안 강화).';
     msg.textContent = `✅ 연결됐어요! ‘${data.title}’ · 작품 ${data.items.length}개${safety}`;
     msg.className = `g-check-msg ${data.version >= 3 && data.ready && data.safeScopes ? 'is-ok' : 'is-warn'}`;
@@ -297,6 +318,7 @@ function renderGalleryShell() {
         <button type="button" class="btn btn-sm" data-g="refresh" title="새로 고침">🔄</button>
         <button type="button" class="btn btn-sm" data-g="qr">📱 QR</button>
         <button type="button" class="btn btn-sm" data-g="switch" title="다른 반·다른 선생님 갤러리로 가기">🔀 다른 갤러리</button>
+        <button type="button" class="btn btn-sm" data-g="admin" id="g-admin-btn" hidden title="선생님: 작품·댓글 지우기">🔑 선생님</button>
         <button type="button" class="btn btn-primary" data-g="open-add">＋ 내 작품 올리기</button>
       </div>
     </header>
@@ -306,7 +328,8 @@ function renderGalleryShell() {
         <label class="g-mine"><input type="checkbox" id="g-only-mine" /> 내가 올린 것만</label>
       </div>
       <div id="g-status" class="g-status" role="status"></div>
-      <p class="g-old" id="g-old" hidden>🔧 <b>선생님께:</b> 갤러리 코드가 예전 버전이에요. 갤러리 만들기 화면의 새 <b>Code.gs·appsscript.json</b>으로 바꾸고 ‘준비하기’ 실행 → ‘배포 관리 → 새 버전’으로 다시 배포해 주세요. 드라이브 권한이 <b>갤러리가 만든 파일만</b>으로 좁아지고, 학생들이 앱에서 🚀 바로 올릴 수 있어요. (갤러리 주소는 그대로)</p>
+      <p class="g-old" id="g-old" hidden>🔧 <b>선생님께:</b> 갤러리 코드가 예전 버전이에요. 갤러리 만들기 화면의 새 <b>Code.gs·appsscript.json</b>으로 바꾸고 ‘배포 관리 → ✏️ 수정 → 새 버전’으로 다시 배포해 주세요. <b>💬 댓글</b>, <b>🔑 선생님 지우기</b>가 생기고 드라이브 권한이 <b>갤러리가 만든 파일만</b>으로 좁아져요. (갤러리 주소는 그대로)</p>
+      <p class="g-admin-bar" id="g-admin-bar" hidden>🔑 <b>선생님 모드</b> · 작품과 댓글에 지우기 버튼이 보여요. <button type="button" class="link-btn" data-g="admin-off">선생님 모드 끄기</button></p>
       <div class="g-grid" id="g-grid"></div>
     </main>
     <div class="modal" id="g-modal" hidden></div>
@@ -355,9 +378,173 @@ function cardHtml(it, mine) {
           ${viewable ? `<button type="button" class="btn btn-primary btn-sm" data-g="view" data-id="${esc(it.id)}">📖 보기</button>` : ''}
           ${it.private ? '' : `<a class="btn btn-sm" href="${esc(info.open)}" target="_blank" rel="noopener noreferrer">열기 ↗</a>`}
           ${mine[it.id] ? `<button type="button" class="btn btn-sm btn-danger-text" data-g="delete" data-id="${esc(it.id)}">지우기</button><span class="g-mine-badge">내가 올림</span>` : ''}
+          ${adminKey() && !mine[it.id] ? `<button type="button" class="btn btn-sm btn-danger-text" data-g="admin-del" data-id="${esc(it.id)}">🗑 작품 지우기</button>` : ''}
         </div>
+        ${commentsHtml(it)}
       </div>
     </article>`;
+}
+
+/* ---------------- 💬 댓글 (카드 안에서 스크롤) ---------------- */
+function commentLi(c, mineC, admin) {
+  const del = mineC[c.id] || admin ? `<button type="button" class="g-cm-del" data-g="cm-del" data-id="${esc(c.id)}" aria-label="댓글 지우기" title="지우기">✕</button>` : '';
+  return `<li data-cm="${esc(c.id)}"><b>${esc(c.name)}</b> <span class="g-cm-text">${esc(c.text)}</span> <time datetime="${esc(c.time)}">${esc(relTime(c.time))}</time>${del}</li>`;
+}
+
+function commentsHtml(it) {
+  if (!commentsOn()) return '';
+  const list = it.comments || [];
+  const mineC = myComments();
+  const admin = !!adminKey();
+  return `<div class="g-comments" data-item="${esc(it.id)}">
+      <p class="g-cm-head">💬 댓글 <b data-cm-count>${list.length}</b></p>
+      <ul class="g-cm-list" data-cm-list>${list.length ? list.map((c) => commentLi(c, mineC, admin)).join('') : '<li class="g-cm-empty">첫 댓글을 남겨 보세요!</li>'}</ul>
+      <form class="g-cm-form" data-cm-form="${esc(it.id)}" autocomplete="off" novalidate>
+        <input class="input input-sm" name="text" maxlength="300" placeholder="응원·칭찬 댓글 쓰기" aria-label="${esc(it.title)}에 댓글 쓰기" />
+        <button type="submit" class="btn btn-sm btn-primary">등록</button>
+      </form>
+    </div>`;
+}
+
+/** 한 카드의 댓글만 다시 그림(전체 목록을 다시 받지 않음) */
+function redrawComments(itemId) {
+  const it = state.data?.items.find((x) => x.id === itemId);
+  const box = root.querySelector(`.g-comments[data-item="${CSS.escape(itemId)}"]`);
+  if (!it || !box) return;
+  const list = it.comments || [];
+  const mineC = myComments();
+  const admin = !!adminKey();
+  box.querySelector('[data-cm-count]').textContent = list.length;
+  const ul = box.querySelector('[data-cm-list]');
+  ul.innerHTML = list.length ? list.map((c) => commentLi(c, mineC, admin)).join('') : '<li class="g-cm-empty">첫 댓글을 남겨 보세요!</li>';
+  ul.scrollTop = ul.scrollHeight;
+}
+
+/** 이름(과 학급 코드)을 아직 모르면 한 번 물어봄 */
+function askIdentity(pending, message = '') {
+  const me = mem.get('gallery:me', {});
+  const needCode = state.data?.needCode;
+  const modal = $('#g-modal');
+  modal.innerHTML = `
+    <form class="modal-card g-form" id="g-id-form" novalidate>
+      <div class="modal-head"><h2>💬 댓글 쓰기</h2><button type="button" class="btn btn-ghost btn-sm" data-g="close" aria-label="닫기">✕</button></div>
+      <p class="pane-hint">처음 한 번만 적으면 다음부터는 바로 올라가요.</p>
+      <label class="field"><span class="field-label">이름</span><input class="input" name="name" maxlength="20" required value="${esc(me.name || '')}" placeholder="예: 김하늘" /></label>
+      ${needCode ? `<label class="field"><span class="field-label">학급 코드<span class="field-hint"> · 선생님이 알려 준 코드</span></span><input class="input" name="code" maxlength="30" required value="${esc(me.code || '')}" autocomplete="off" /></label>` : ''}
+      <p class="g-form-error" id="g-form-error" role="alert">${message ? `⚠️ ${esc(message)}` : ''}</p>
+      <button type="submit" class="btn btn-primary btn-lg btn-block">💬 댓글 올리기</button>
+    </form>`;
+  modal.hidden = false;
+  modal.querySelector(me.name ? (needCode ? '[name="code"]' : '[name="name"]') : '[name="name"]').focus();
+  pendingComment = pending;
+}
+let pendingComment = null;
+
+function submitIdentity(form) {
+  const fd = new FormData(form);
+  const name = String(fd.get('name') || '').trim();
+  const code = String(fd.get('code') || '').trim();
+  if (!name) return ($('#g-form-error').textContent = '⚠️ 이름을 적어 주세요.');
+  if (state.data?.needCode && !code) return ($('#g-form-error').textContent = '⚠️ 학급 코드를 적어 주세요.');
+  mem.set('gallery:me', { ...mem.get('gallery:me', {}), name, code });
+  closeModal();
+  if (pendingComment) sendComment(pendingComment.item, pendingComment.text);
+}
+
+async function sendComment(item, text, form = null) {
+  const me = mem.get('gallery:me', {});
+  if (!me.name || (state.data?.needCode && !me.code)) return askIdentity({ item, text });
+  const btn = form?.querySelector('button');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await addComment(state.scriptUrl, { item, text, name: me.name, code: me.code });
+    if (!r?.ok) {
+      if (r?.field === 'code' || r?.field === 'name') return askIdentity({ item, text }, r.error);
+      toast(`⚠️ ${r?.error || '댓글을 올리지 못했어요.'}`);
+      return;
+    }
+    mem.set(myCommentsKey(), { ...myComments(), [r.comment.id]: r.token });
+    const it = state.data.items.find((x) => x.id === item);
+    if (it) (it.comments = it.comments || []).push(r.comment);
+    const input = (form || root.querySelector(`[data-cm-form="${CSS.escape(item)}"]`))?.querySelector('[name="text"]');
+    if (input) input.value = '';
+    redrawComments(item);
+  } catch {
+    toast('⚠️ 인터넷 연결을 확인하고 다시 눌러 주세요.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function removeComment(commentId) {
+  const item = state.data?.items.find((x) => (x.comments || []).some((c) => c.id === commentId));
+  if (!item || !confirm('이 댓글을 지울까요?')) return;
+  const token = myComments()[commentId];
+  try {
+    const r = token ? await deleteComment(state.scriptUrl, commentId, token) : await adminCall(state.scriptUrl, adminKey(), 'deleteComment', commentId);
+    if (!r?.ok) {
+      if (r?.field === 'key') leaveAdmin();
+      if (!/이미 지워졌어요/.test(r?.error || '')) return toast(`⚠️ ${r?.error || '지우지 못했어요.'}`);
+    }
+    const mine = myComments();
+    delete mine[commentId];
+    mem.set(myCommentsKey(), mine);
+    item.comments = item.comments.filter((c) => c.id !== commentId);
+    redrawComments(item.id);
+  } catch {
+    toast('⚠️ 인터넷 연결을 확인하고 다시 눌러 주세요.');
+  }
+}
+
+/* ---------------- 🔑 선생님 모드 (관리 코드: 시트 ‘설정’ 탭) ---------------- */
+function openAdmin() {
+  const modal = $('#g-modal');
+  modal.innerHTML = `
+    <form class="modal-card g-form" id="g-admin-form" novalidate>
+      <div class="modal-head"><h2>🔑 선생님 모드</h2><button type="button" class="btn btn-ghost btn-sm" data-g="close" aria-label="닫기">✕</button></div>
+      <p class="pane-hint">갤러리 구글 시트의 <b>‘설정’ 탭 → 선생님 관리 코드</b>를 적으면, 이 기기에서 모든 작품과 댓글을 지울 수 있어요. (학생에게는 알려 주지 마세요)</p>
+      <label class="field"><span class="field-label">선생님 관리 코드</span><input class="input" name="key" maxlength="40" autocomplete="off" required /></label>
+      <p class="g-form-error" id="g-form-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary btn-lg btn-block">선생님 모드 켜기</button>
+    </form>`;
+  modal.hidden = false;
+  modal.querySelector('[name="key"]').focus();
+}
+
+async function submitAdmin(form) {
+  const key = String(new FormData(form).get('key') || '').trim();
+  if (!key) return ($('#g-form-error').textContent = '⚠️ 관리 코드를 적어 주세요.');
+  try {
+    const r = await adminCall(state.scriptUrl, key, 'check');
+    if (!r?.ok) return ($('#g-form-error').textContent = `⚠️ ${r?.error || '확인하지 못했어요.'}`);
+    mem.set(adminKeyName(), key);
+    closeModal();
+    renderGrid();
+    toast('🔑 선생님 모드예요. 작품·댓글에 지우기 버튼이 보여요.');
+  } catch {
+    $('#g-form-error').textContent = '⚠️ 인터넷 연결을 확인하고 다시 눌러 주세요.';
+  }
+}
+
+function leaveAdmin() {
+  mem.set(adminKeyName(), '');
+  renderGrid();
+}
+
+async function adminDeleteItem(id) {
+  const it = state.data?.items.find((x) => x.id === id);
+  if (!it || !confirm(`‘${it.title}’(${it.name}) 작품을 지울까요?\n댓글도 함께 지워지고, 갤러리로 올린 파일은 드라이브 휴지통으로 가요.`)) return;
+  try {
+    const r = await adminCall(state.scriptUrl, adminKey(), 'deleteItem', id);
+    if (!r?.ok) {
+      if (r?.field === 'key') leaveAdmin();
+      return toast(`⚠️ ${r?.error || '지우지 못했어요.'}`);
+    }
+    toast('지웠어요.');
+    await load({ quiet: true });
+  } catch {
+    toast('⚠️ 인터넷 연결을 확인하고 다시 눌러 주세요.');
+  }
 }
 
 /* ---------------- 썸네일 (앱에서 공유한 작품) ---------------- */
@@ -414,7 +601,10 @@ function renderGrid() {
   $('#g-count').textContent = `작품 ${state.data.items.length}개`;
   const items = filteredItems();
   const mine = myPosts();
-  $('#g-old').hidden = state.data.version >= 3;
+  $('#g-old').hidden = state.data.version >= 4;
+  $('#g-grid').classList.toggle('has-comments', !!commentsOn());
+  $('#g-admin-btn').hidden = !state.data.admin || !!adminKey();
+  $('#g-admin-bar').hidden = !adminKey();
   $('#g-grid').innerHTML = items.length
     ? items.map((it) => cardHtml(it, mine)).join('')
     : `<div class="empty"><div class="empty-icon" aria-hidden="true">${state.data.items.length ? '🔍' : '🐣'}</div><p><b>${
@@ -460,6 +650,8 @@ async function openAdd() {
   const info = await myPortfolioInfo();
   const needCode = state.data?.needCode;
   const canUpload = !!state.data?.canUpload;
+  const mine = myPosts();
+  const myItems = (state.data?.items || []).filter((it) => mine[it.id]);
   const modal = $('#g-modal');
   modal.innerHTML = `
     <form class="modal-card g-form" id="g-add-form" novalidate data-mode="${canUpload ? 'file' : 'link'}">
@@ -475,6 +667,14 @@ async function openAdd() {
       }
       <label class="field" data-for="file"${canUpload ? '' : ' hidden'}><span class="field-label">올릴 파일<span class="field-hint"> · PDF·웹페이지(ZIP·HTML)·사진·동영상 · ${Math.round((state.data?.maxUpload || 104857600) / 1048576)}MB까지</span></span>
         <input class="input" name="file" type="file" accept="${UPLOAD_ACCEPT}" /></label>
+      ${
+        canUpload && myItems.length
+          ? `<label class="field" data-for="file"><span class="field-label">어떻게 올릴까요?</span><select class="select" name="replace">
+              <option value="">새 작품으로 올리기</option>
+              ${myItems.map((it) => `<option value="${esc(it.id)}">‘${esc(it.title)}’ 새 파일로 바꾸기 (댓글은 그대로)</option>`).join('')}
+            </select></label>`
+          : ''
+      }
       <div data-for="link"${canUpload ? ' hidden' : ''}>
         <details class="more g-howto">
           <summary>📎 구글 드라이브 링크 복사하는 법</summary>
@@ -596,7 +796,9 @@ async function submitAdd(form) {
     if (mode === 'file') {
       const thumb = await fileThumb(file);
       const { link: _l, ...meta } = item;
-      r = await uploadFile(state.scriptUrl, { ...meta, blob: file, fileName: file.name, thumb }, (sent, total) => {
+      const replaceId = String(fd.get('replace') || '');
+      const replace = replaceId && myPosts()[replaceId] ? { replaceId, replaceToken: myPosts()[replaceId] } : {};
+      r = await uploadFile(state.scriptUrl, { ...meta, ...replace, blob: file, fileName: file.name, thumb }, (sent, total) => {
         btn.textContent = `올리는 중… ${Math.round((sent / total) * 100)}%`;
       });
     } else r = await addItem(state.scriptUrl, item);
@@ -604,7 +806,8 @@ async function submitAdd(form) {
     mem.set('gallery:me', { name: item.name, code: item.code });
     mem.set(mineKey(), { ...myPosts(), [r.id]: r.token });
     closeModal();
-    if (r.warning) toast(`🎉 올렸어요! 그런데 ⚠️ ${r.warning}`, 9000);
+    if (r.replaced) toast('🎉 새 파일로 바꿨어요! 댓글은 그대로예요.');
+    else if (r.warning) toast(`🎉 올렸어요! 그런데 ⚠️ ${r.warning}`, 9000);
     else toast(isViewable({ fileType: r.fileType, size: file?.size || 1, via: mode === 'file' ? 'file' : 'link' }) ? '🎉 갤러리에 올렸어요! 📖 보기로 바로 열어 볼 수 있어요.' : '🎉 갤러리에 올렸어요!');
     await load({ quiet: true });
   } catch {
@@ -617,7 +820,7 @@ async function submitAdd(form) {
 
 async function removeMine(id) {
   const token = myPosts()[id];
-  if (!token || !confirm('이 작품을 갤러리에서 지울까요? (드라이브의 파일은 그대로예요)')) return;
+  if (!token || !confirm('이 작품을 갤러리에서 지울까요?\n작품의 댓글도 함께 지워져요. (드라이브의 파일은 그대로예요)\n💡 새 파일로 바꾸려면 ‘＋ 내 작품 올리기’에서 ‘바꾸기’를 고르면 댓글이 남아요.')) return;
   try {
     const r = await deleteItem(state.scriptUrl, id, token);
     if (!r?.ok) {
@@ -831,6 +1034,10 @@ root.addEventListener('click', async (e) => {
   else if (act === 'view') await openViewer(el.dataset.id);
   else if (act === 'mode') setAddMode(el.dataset.mode);
   else if (act === 'switch') openSwitch();
+  else if (act === 'cm-del') await removeComment(el.dataset.id);
+  else if (act === 'admin') openAdmin();
+  else if (act === 'admin-off') leaveAdmin();
+  else if (act === 'admin-del') await adminDeleteItem(el.dataset.id);
   else if (act === 'bug') openBugReport();
   else if (act === 'delete') await removeMine(el.dataset.id);
 });
@@ -856,6 +1063,16 @@ root.addEventListener('submit', (e) => {
   } else if (e.target.id === 'g-switch-form') {
     e.preventDefault();
     submitSwitch(e.target);
+  } else if (e.target.id === 'g-id-form') {
+    e.preventDefault();
+    submitIdentity(e.target);
+  } else if (e.target.id === 'g-admin-form') {
+    e.preventDefault();
+    submitAdmin(e.target);
+  } else if (e.target.dataset.cmForm) {
+    e.preventDefault();
+    const text = String(e.target.querySelector('[name="text"]').value || '').trim();
+    if (text) sendComment(e.target.dataset.cmForm, text, e.target);
   }
 });
 
@@ -871,10 +1088,8 @@ function start() {
   }
   mem.set('gallery:last', galleryLink(state.scriptUrl));
   renderGalleryShell();
+  // 목록은 이 페이지를 열 때와 🔄를 누를 때만 받음(자동 갱신 없음 → 학생이 많아도 서버 부담이 적음)
   load();
-  setInterval(() => {
-    if (document.visibilityState === 'visible' && $('#g-modal')?.hidden !== false) load({ quiet: true });
-  }, REFRESH_MS);
 }
 
 window.addEventListener('hashchange', () => location.reload());

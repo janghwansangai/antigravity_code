@@ -40,19 +40,30 @@ export async function openCamera({ mode = 'photo' } = {}) {
   if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) return pickWithInput(mode);
 
   let stream;
-  let facing = 'environment';
-  const startStream = async () => {
-    stream?.getTracks().forEach((t) => t.stop());
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false
-    });
+  let cameras = []; // 이 기기의 카메라 목록 (권한을 받은 뒤에야 이름·번호를 알 수 있음)
+  const SIZE = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  const open = async (video) => {
+    stream?.getTracks().forEach((t) => t.stop()); // 카메라 두 개를 동시에 못 여는 기기가 많아 먼저 끔
+    stream = null;
+    stream = await navigator.mediaDevices.getUserMedia({ video: { ...SIZE, ...video }, audio: false });
+  };
+  const currentId = () => {
+    const track = stream?.getVideoTracks()[0];
+    return track?.getSettings?.().deviceId || cameras.find((c) => c.label && c.label === track?.label)?.deviceId || '';
+  };
+  const listCameras = async () => {
+    try {
+      cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput' && d.deviceId);
+    } catch {
+      cameras = [];
+    }
   };
   try {
-    await startStream();
+    await open({ facingMode: { ideal: 'environment' } }); // 처음엔 뒤쪽(작품 찍기용) 카메라를 먼저
   } catch {
     return pickWithInput(mode);
   }
+  await listCameras();
 
   return new Promise((resolve) => {
     const shots = [];
@@ -75,7 +86,7 @@ export async function openCamera({ mode = 'photo' } = {}) {
         </div>
         <p class="cam-hint" data-cam-hint></p>
         <div class="cam-actions">
-          <button type="button" class="btn" data-cam="flip" title="앞/뒤 카메라 바꾸기">🔄 카메라 바꾸기</button>
+          <button type="button" class="btn" data-cam="flip" title="다른 카메라로 바꾸기"${cameras.length > 1 ? '' : ' hidden'}>🔄 카메라 바꾸기</button>
           <button type="button" class="cam-shutter" data-cam="shot" aria-label="찍기"></button>
           <button type="button" class="btn btn-primary" data-cam="done">완료 <span data-cam-count></span></button>
         </div>
@@ -113,6 +124,35 @@ export async function openCamera({ mode = 'photo' } = {}) {
       if (e.key === 'Escape' && !document.querySelector('.photo-editor')) finish();
     };
     document.addEventListener('keydown', onKey);
+
+    /** 다음 카메라로: 카메라 목록을 차례로 돌아가며 (앞·뒤뿐 아니라 USB 카메라, 광각 카메라도) */
+    async function switchCamera() {
+      await listCameras();
+      if (cameras.length < 2) {
+        hint.textContent = '바꿀 다른 카메라가 없어요.';
+        return;
+      }
+      const from = Math.max(0, cameras.findIndex((c) => c.deviceId === currentId()));
+      for (let step = 1; step < cameras.length; step++) {
+        const next = cameras[(from + step) % cameras.length];
+        try {
+          await open({ deviceId: { exact: next.deviceId } });
+          attach();
+          hint.textContent = `📷 ${next.label || `카메라 ${((from + step) % cameras.length) + 1}`}`;
+          return;
+        } catch {
+          /* 이 카메라는 못 열면 그다음 카메라로 */
+        }
+      }
+      // 다 안 되면 원래 카메라로 되돌림
+      try {
+        await open({ deviceId: { exact: cameras[from].deviceId } });
+        attach();
+      } catch {
+        /* 그대로 */
+      }
+      hint.textContent = '다른 카메라를 열 수 없어요. 다른 프로그램이 카메라를 쓰고 있는지 확인해 주세요.';
+    }
 
     async function shoot() {
       const w = video.videoWidth;
@@ -152,12 +192,11 @@ export async function openCamera({ mode = 'photo' } = {}) {
           el.disabled = false;
         }
       } else if (act === 'flip') {
-        facing = facing === 'environment' ? 'user' : 'environment';
+        el.disabled = true;
         try {
-          await startStream();
-          attach();
-        } catch {
-          hint.textContent = '다른 카메라를 열 수 없어요.';
+          await switchCamera();
+        } finally {
+          el.disabled = false;
         }
       }
     });

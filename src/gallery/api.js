@@ -9,6 +9,9 @@
  *               POST { action:'uploadStart', … } → { uploadId } → POST { action:'uploadChunk', uploadId, start, data } …
  *               → 마지막에 { ok, id, token, link, fileType }
  * - 지우기: POST { action:'delete', id, token }                    → { ok }
+ * - 댓글:   POST { action:'comment', item, name, text, code }       → { ok, comment, token }
+ *           POST { action:'deleteComment', id, token }              → { ok }
+ * - 선생님: POST { action:'admin', key, op:'check'|'deleteItem'|'deleteComment', id } → { ok }
  *
  * POST는 'text/plain'으로 보내 브라우저의 사전 확인(CORS preflight) 없이 Apps Script에 바로 닿게 합니다.
  * GET은 fetch가 막히는 환경을 위해 JSONP(<script>) 방식으로 한 번 더 시도합니다.
@@ -117,6 +120,20 @@ export function addItem(scriptUrl, item) {
 
 export function deleteItem(scriptUrl, id, token) {
   return post(scriptUrl, { action: 'delete', id, token });
+}
+
+/* ---------------- 💬 댓글 · 🔑 선생님 (서버 버전 4) ---------------- */
+export function addComment(scriptUrl, { item, name, text, code }) {
+  return post(scriptUrl, { action: 'comment', item, name, text, code });
+}
+
+export function deleteComment(scriptUrl, id, token) {
+  return post(scriptUrl, { action: 'deleteComment', id, token });
+}
+
+/** op: 'check' | 'deleteItem' | 'deleteComment' */
+export function adminCall(scriptUrl, key, op, id = '') {
+  return post(scriptUrl, { action: 'admin', key, op, id });
 }
 
 /** Blob → base64 (data: 앞부분 뺀 것) */
