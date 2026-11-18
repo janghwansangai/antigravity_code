@@ -31,6 +31,7 @@ import { PHOTO_SIZES, dataUrlToBlob, formatBytes, getImageSize, isImageFile, rot
 import { openPhotoEditor } from './editor/photoEditor.js';
 import { openCamera } from './editor/camera.js';
 import { ingestFiles, estimateStoredBytes } from './media/ingest.js';
+import { openBugReport, setBugScreen } from './utils/bugReport.js';
 import { connectGallery, copyShareLink, gallerySectionHtml, hydrateGallerySection, openShareModal, setChangingGallery } from './share/galleryShare.js';
 import { VIDEO_SIZES, DEFAULT_VIDEO_SIDE, canCompressVideo, compressVideo, renameForType } from './utils/videoCompress.js';
 import { mediaMime, totalMediaBytes, walkMedia } from './media/model.js';
@@ -220,6 +221,8 @@ function renderEditor({ resetScroll = false } = {}) {
   if (ui.step === 'profile') body.innerHTML = profileStepHtml(state);
   else if (ui.step === 'works') body.innerHTML = editing ? workDetailHtml(state, editing) : worksListHtml(state);
   else body.innerHTML = designStepHtml(state);
+  // 🐞 오류 신고에 화면 이름만 알림(개인정보 없음)
+  setBugScreen(ui.step === 'profile' ? '학생앱 ① 내 소개' : ui.step === 'works' ? (editing ? '학생앱 ② 활동 편집' : '학생앱 ② 활동 목록') : '학생앱 ③ 꾸미기·저장');
 
   renderSteps();
   renderWho();
@@ -632,6 +635,7 @@ function designStepHtml(state) {
     </div>
 
     <div class="danger-row">
+      <button type="button" class="btn btn-ghost btn-sm" data-action="bug-report">🐞 오류 신고</button>
       <button type="button" class="btn btn-ghost btn-sm" data-action="load-sample">예시로 채워 보기</button>
       <button type="button" class="btn btn-danger-text btn-sm" data-action="reset-current">이 포트폴리오 비우기</button>
     </div>
@@ -1444,6 +1448,7 @@ async function onClick(e) {
       startGalleryChange();
       break;
     case 'share-gallery':
+      setBugScreen('학생앱 갤러리 공유');
       await openShareModal({
         modal: $('#share-modal'),
         portfolioId: store.getPortfolioId(),
@@ -1454,6 +1459,9 @@ async function onClick(e) {
       break;
     case 'close-share':
       closeShare();
+      break;
+    case 'bug-report':
+      openBugReport();
       break;
     case 'share-copy-link':
       await copyShareLink(el, toast);

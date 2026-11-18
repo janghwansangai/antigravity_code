@@ -11,8 +11,10 @@ import '../style.css';
 import './gallery.css';
 import qrcode from 'qrcode-generator';
 import appsScriptSource from '../../apps-script/Code.gs?raw';
+import manifestSource from '../../apps-script/appsscript.json?raw';
 import { addItem, deleteItem, fetchFileBytes, fetchGallery, fetchThumbs, looksLikeScriptUrl, parseGalleryAddress, uploadFile } from './api.js';
 import { isValidLink, parseLink } from './links.js';
+import { openBugReport, setBugScreen } from '../utils/bugReport.js';
 
 const root = document.getElementById('gallery-app');
 const $ = (sel) => root.querySelector(sel);
@@ -20,8 +22,11 @@ const REFRESH_MS = 60000;
 /** 📖 갤러리 안에서 바로 펼쳐 볼 수 있는 파일 (ZIP·웹페이지·프로젝트 파일, 새 버전 서버는 PDF도) */
 const VIEWABLE = new Set(['zip', 'portfolio', 'html']);
 const PDF_VIEW_MAX = 40 * 1024 * 1024; // 이보다 큰 PDF는 드라이브 미리보기로
-const isViewable = (it) =>
-  VIEWABLE.has(it.fileType) || (it.fileType === 'pdf' && state.data?.version >= 2 && it.size > 0 && it.size <= PDF_VIEW_MAX);
+const isViewable = (it) => {
+  // 새 서버(v3)는 보안을 위해 '파일로 올린 작품'만 열어 줌 (링크로 올린 남의 파일은 드라이브에서 열기)
+  if (state.data?.version >= 3 && it.via !== 'file') return false;
+  return VIEWABLE.has(it.fileType) || (it.fileType === 'pdf' && state.data?.version >= 2 && it.size > 0 && it.size <= PDF_VIEW_MAX);
+};
 const KIND_LABEL = { pdf: ['📄', 'PDF'], html: ['🌐', '웹페이지'], zip: ['📖', '포트폴리오'], portfolio: ['📖', '포트폴리오'] };
 
 const esc = (s = '') =>
@@ -150,6 +155,7 @@ async function myPortfolioInfo() {
 /* ================================================================== */
 function renderSetup() {
   document.title = '우리 반 작품 갤러리 만들기';
+  setBugScreen('갤러리 만들기 안내');
   root.innerHTML = `
     <header class="g-top">
       <a class="g-brand" href="./index.html"><span class="brand-logo" aria-hidden="true">🌈</span><span>우리 반 작품 갤러리</span></a>
@@ -164,22 +170,43 @@ function renderSetup() {
         </div>
       </div>
       <h1 class="g-h1">갤러리 만들기 <small>선생님용 · 10분</small></h1>
-      <p class="pane-hint">학생들이 포트폴리오 앱에서 <b>🚀 갤러리에 공유하기</b>를 누르면 파일이 <b>선생님 구글 드라이브</b>의 작품 폴더에 저장되고, 이 갤러리에 카드로 바로 모여요(드라이브 공유 링크를 붙여 넣어도 돼요). 목록은 선생님 <b>구글 시트</b>에 쌓여서 시트에서 바로 숨기거나 지울 수 있어요. 서버·비용 없이 무료예요.</p>
+      <p class="pane-hint">학생들이 포트폴리오 앱에서 <b>🚀 갤러리에 공유하기</b>를 누르면 작품이 <b>이 갤러리가 만든 드라이브 폴더</b>에 저장되고, 갤러리에 카드로 바로 모여요. 목록은 선생님 <b>구글 시트</b>에 쌓여서 시트에서 바로 숨기거나 지울 수 있어요. 서버·비용 없이 무료예요.</p>
+      <div class="g-safe">
+        <b>🔒 선생님 드라이브는 안전해요</b>
+        <p>갤러리 코드는 딱 세 가지 권한만 받아요: <b>① 이 시트 하나</b>, <b>② 갤러리가 직접 만든 폴더·파일</b>, <b>③ 파일을 올리고 읽는 연결</b>. 선생님 드라이브의 다른 파일·폴더는 <b>목록도 내용도 볼 수 없어요</b>(구글이 막아 줌). 권한 허용 화면에도 ‘이 앱에서 사용하는 특정 Google Drive 파일만’이라고 나와요.</p>
+      </div>
 
       <ol class="g-steps">
         <li>
-          <b>구글 시트를 새로 만들어요.</b>
-          <p>링크를 모아 둘 곳이에요. 이름은 ‘우리 반 작품 갤러리’처럼 정하세요.</p>
-          <a class="btn btn-sm" href="https://sheets.new" target="_blank" rel="noopener">📈 새 구글 시트 열기 ↗</a>
+          <b>구글 시트를 원하는 곳에 만들어요.</b>
+          <p>목록이 쌓일 시트예요. 이름은 ‘6학년 3반 작품 갤러리’처럼 정하세요.</p>
+          <div class="g-code-actions">
+            <a class="btn btn-sm" href="https://sheets.new" target="_blank" rel="noopener">📈 내 드라이브에 바로 만들기 ↗</a>
+            <a class="btn btn-sm" href="https://drive.google.com/drive/my-drive" target="_blank" rel="noopener">📁 원하는 폴더에 만들기 ↗</a>
+          </div>
+          <p class="small muted">‘원하는 폴더에 만들기’: 드라이브에서 폴더를 열고 <b>＋ 새로 만들기 → Google 스프레드시트</b>. 나중에 드라이브에서 옮겨도 갤러리는 그대로 동작해요.</p>
         </li>
         <li>
-          <b>시트 메뉴 → 확장 프로그램 → Apps Script</b>를 누르고, 들어 있는 코드를 모두 지운 뒤 아래 코드를 붙여 넣고 💾 저장해요.
-          그다음 위쪽 함수 목록에서 <b>‘준비하기’</b>를 고르고 <b>▶ 실행</b> → 권한 허용을 해요(작품 폴더가 만들어져요).
-          <div class="g-code-actions">
-            <button type="button" class="btn btn-primary btn-sm" data-g="copy-code">📋 코드 복사</button>
-            <a class="btn btn-sm" href="https://github.com/janghwansangai/antigravity_code/blob/main/apps-script/Code.gs" target="_blank" rel="noopener">코드 원문 보기 ↗</a>
-          </div>
-          <details class="more"><summary>코드 미리 보기</summary><pre class="g-code">${esc(appsScriptSource)}</pre></details>
+          <b>시트 메뉴 → 확장 프로그램 → Apps Script</b>를 열고, 파일 두 개를 붙여 넣어요.
+          <ol class="g-substeps">
+            <li><b>Code.gs</b>: 들어 있는 코드를 모두 지우고 붙여 넣기
+              <div class="g-code-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-g="copy-code">📋 Code.gs 복사</button>
+                <a class="btn btn-sm" href="https://github.com/janghwansangai/antigravity_code/blob/main/apps-script/Code.gs" target="_blank" rel="noopener">원문 보기 ↗</a>
+              </div>
+            </li>
+            <li><b>appsscript.json</b>(권한을 좁히는 설정 파일): 왼쪽 <b>⚙️ 프로젝트 설정</b> → <b>‘편집기에서 appsscript.json 매니페스트 파일 표시’</b> 체크 → 왼쪽 파일 목록의 <b>appsscript.json</b>을 열고 모두 지운 뒤 붙여 넣기
+              <div class="g-code-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-g="copy-manifest">📋 appsscript.json 복사</button>
+              </div>
+            </li>
+            <li>💾 저장</li>
+          </ol>
+          <details class="more"><summary>코드 미리 보기</summary><pre class="g-code">${esc(manifestSource)}</pre><pre class="g-code">${esc(appsScriptSource)}</pre></details>
+        </li>
+        <li>
+          <b>위쪽 함수 목록에서 ‘준비하기’ → ▶ 실행 → 권한 허용</b>
+          <p class="small muted">‘Google에서 확인하지 않은 앱’이 나오면 <b>고급 → (프로젝트 이름)(으)로 이동</b> → 허용(선생님이 직접 만든 코드라서 나오는 화면이에요). 실행 로그에 <b>🔒 권한 확인 완료</b>와 <b>작품 폴더</b> 주소가 나오면 성공이에요. ⚠️가 나오면 appsscript.json을 다시 확인하세요.</p>
         </li>
         <li>
           <b>오른쪽 위 ‘배포’ → ‘새 배포’</b> → 톱니바퀴에서 <b>웹 앱</b>을 고르고
@@ -187,9 +214,9 @@ function renderSetup() {
             <li>실행 사용자: <b>나</b></li>
             <li>액세스 권한이 있는 사용자: <b>모든 사용자</b></li>
           </ul>
-          → ‘배포’ → 권한 허용 → 나오는 <b>웹 앱 URL</b>을 복사해요.
+          → ‘배포’ → 나오는 <b>웹 앱 URL</b>을 복사해요.
           <p class="small muted">학교 계정에서 ‘모든 사용자’가 보이지 않으면 학교 관리자가 막아 둔 것이에요. 개인 구글 계정으로 시트를 만들면 됩니다.</p>
-          <p class="small muted">이미 만든 갤러리를 새 코드로 바꿀 때: 코드를 바꿔 붙여 넣고 ‘준비하기’ ▶ 실행 → <b>배포 → 배포 관리 → ✏️ 수정 → 버전: 새 버전 → 배포</b>. 주소는 그대로예요.</p>
+          <p class="small muted">이미 만든 갤러리를 새 코드로 바꿀 때: 두 파일을 바꿔 붙여 넣고 ‘준비하기’ ▶ 실행 → <b>배포 → 배포 관리 → ✏️ 수정 → 버전: 새 버전 → 배포</b>. ‘새 배포’를 누르면 주소가 바뀌니 꼭 ‘배포 관리’로 하세요.</p>
         </li>
         <li>
           <b>웹 앱 URL을 붙여 넣고 연결을 확인해요.</b>
@@ -208,10 +235,13 @@ function renderSetup() {
           <li><b>갤러리 제목</b>: 갤러리 맨 위에 보이는 이름</li>
           <li><b>학급 코드</b>: 적어 두면 코드를 아는 학생만 올릴 수 있어요(낯선 사람이 올리는 것 방지)</li>
           <li><b>올리기 허용</b>: FALSE로 바꾸면 올리기를 잠시 닫아요</li>
-          <li><b>작품 폴더</b>: 학생 파일이 저장될 드라이브 폴더 주소(비우면 내 드라이브에 ‘우리 반 갤러리 작품’ 폴더를 만들어요). 학생들과 함께 쓰는 폴더 주소를 넣어도 돼요</li>
+          <li><b>작품 폴더</b>: ‘준비하기’ 때 갤러리가 만든 폴더 주소가 적혀요. <b>드라이브에서 이 폴더를 원하는 곳(학급 폴더 등)으로 옮기거나 이름을 바꿔도</b> 계속 그 폴더에 저장돼요. (보안 때문에 갤러리는 자기가 만든 폴더에만 저장해요)</li>
+          <li><b>파일 링크 공유</b>: TRUE면 올린 파일 하나하나를 ‘링크가 있는 사람 보기’로 공유(폴더는 공유하지 않음), FALSE면 공유하지 않고 우리 갤러리에서만 보여요</li>
+          <li><b>저장 용량 한도(GB)</b>: 이 갤러리에 올릴 수 있는 전체 용량(기본 3GB)</li>
           <li>작품 줄을 지우거나 ‘숨김’ 칸에 TRUE를 적으면 갤러리에서 사라져요</li>
         </ul>
       </div>
+      <p class="g-guide-link"><a href="./guide.html">❓ 사용법 안내 페이지</a> · <button type="button" class="link-btn" data-g="bug">🐞 오류 신고</button></p>
     </main>
     <div class="toast" id="g-toast" role="status" aria-live="polite"></div>`;
 }
@@ -232,8 +262,14 @@ async function checkConnection() {
     if (!data?.ok) throw new Error(data?.error || 'bad');
     const link = galleryLink(url);
     mem.set('gallery:last', link);
-    msg.textContent = `✅ 연결됐어요! ‘${data.title}’ · 작품 ${data.items.length}개`;
-    msg.className = 'g-check-msg is-ok';
+    const safety =
+      data.version >= 3
+        ? data.ready && data.safeScopes
+          ? ' · 🔒 권한 확인 완료(이 시트와 갤러리가 만든 파일만)'
+          : ' · ⚠️ 아직 ‘준비하기’를 실행하지 않았거나 appsscript.json이 빠졌어요. 3단계를 해 주세요.'
+        : ' · ⚠️ 예전 버전 코드예요. 새 Code.gs와 appsscript.json으로 바꿔 주세요(보안 강화).';
+    msg.textContent = `✅ 연결됐어요! ‘${data.title}’ · 작품 ${data.items.length}개${safety}`;
+    msg.className = `g-check-msg ${data.version >= 3 && data.ready && data.safeScopes ? 'is-ok' : 'is-warn'}`;
     $('#g-setup-result').innerHTML = `
       <section class="g-share">
         <h2>🎉 학생들에게 이 주소를 알려 주세요</h2>
@@ -252,6 +288,7 @@ async function checkConnection() {
 /* 2) 갤러리                                                           */
 /* ================================================================== */
 function renderGalleryShell() {
+  setBugScreen('갤러리 목록');
   root.innerHTML = `
     <header class="g-top">
       <a class="g-brand" href="./index.html" title="포트폴리오 만들기로"><span class="brand-logo" aria-hidden="true">🌈</span><span id="g-title">우리 반 작품 갤러리</span></a>
@@ -269,7 +306,7 @@ function renderGalleryShell() {
         <label class="g-mine"><input type="checkbox" id="g-only-mine" /> 내가 올린 것만</label>
       </div>
       <div id="g-status" class="g-status" role="status"></div>
-      <p class="g-old" id="g-old" hidden>🔧 <b>선생님께:</b> 갤러리 코드가 예전 버전이에요. 새 코드로 바꾸고 ‘새 버전’으로 다시 배포하면, 학생들이 포트폴리오 앱에서 <b>🚀 갤러리에 공유하기</b>로 바로 올릴 수 있어요. (갤러리 주소는 그대로)</p>
+      <p class="g-old" id="g-old" hidden>🔧 <b>선생님께:</b> 갤러리 코드가 예전 버전이에요. 갤러리 만들기 화면의 새 <b>Code.gs·appsscript.json</b>으로 바꾸고 ‘준비하기’ 실행 → ‘배포 관리 → 새 버전’으로 다시 배포해 주세요. 드라이브 권한이 <b>갤러리가 만든 파일만</b>으로 좁아지고, 학생들이 앱에서 🚀 바로 올릴 수 있어요. (갤러리 주소는 그대로)</p>
       <div class="g-grid" id="g-grid"></div>
     </main>
     <div class="modal" id="g-modal" hidden></div>
@@ -316,7 +353,7 @@ function cardHtml(it, mine) {
         ${it.desc ? `<p class="g-desc">${esc(it.desc)}</p>` : ''}
         <div class="g-actions">
           ${viewable ? `<button type="button" class="btn btn-primary btn-sm" data-g="view" data-id="${esc(it.id)}">📖 보기</button>` : ''}
-          <a class="btn btn-sm" href="${esc(info.open)}" target="_blank" rel="noopener noreferrer">열기 ↗</a>
+          ${it.private ? '' : `<a class="btn btn-sm" href="${esc(info.open)}" target="_blank" rel="noopener noreferrer">열기 ↗</a>`}
           ${mine[it.id] ? `<button type="button" class="btn btn-sm btn-danger-text" data-g="delete" data-id="${esc(it.id)}">지우기</button><span class="g-mine-badge">내가 올림</span>` : ''}
         </div>
       </div>
@@ -377,7 +414,7 @@ function renderGrid() {
   $('#g-count').textContent = `작품 ${state.data.items.length}개`;
   const items = filteredItems();
   const mine = myPosts();
-  $('#g-old').hidden = !!state.data.version;
+  $('#g-old').hidden = state.data.version >= 3;
   $('#g-grid').innerHTML = items.length
     ? items.map((it) => cardHtml(it, mine)).join('')
     : `<div class="empty"><div class="empty-icon" aria-hidden="true">${state.data.items.length ? '🔍' : '🐣'}</div><p><b>${
@@ -418,6 +455,7 @@ async function openAdd() {
     toast('지금은 올리기가 닫혀 있어요. 선생님께 여쭤 보세요.');
     return;
   }
+  setBugScreen('갤러리 올리기');
   const saved = mem.get('gallery:me', {});
   const info = await myPortfolioInfo();
   const needCode = state.data?.needCode;
@@ -445,7 +483,7 @@ async function openAdd() {
             <li>올린 파일을 <b>오른쪽 클릭(휴대폰은 ⋮) → 공유 → 링크 복사</b>.</li>
             <li>‘일반 액세스’를 <b>링크가 있는 우리 학교 사용자</b>(또는 링크가 있는 모든 사용자) <b>뷰어</b>로 바꿔야 친구들이 볼 수 있어요.</li>
           </ol>
-          <p class="small">💡 <b>ZIP·HTML·프로젝트 파일</b>은 갤러리에서 <b>📖 보기</b>로 사진·동영상까지 그대로 펼쳐져요.</p>
+          <p class="small">💡 링크로 올린 파일은 드라이브에서 열려요. <b>ZIP·웹페이지(HTML)</b>를 갤러리에서 바로 펼쳐 보려면 <b>📁 파일 올리기</b>로 올려 주세요.</p>
         </details>
         <label class="field"><span class="field-label">구글 드라이브 링크</span><input class="input" name="link" type="url" placeholder="https://drive.google.com/file/d/…/view" /></label>
         <p class="g-link-check" id="g-link-check"></p>
@@ -567,7 +605,7 @@ async function submitAdd(form) {
     mem.set(mineKey(), { ...myPosts(), [r.id]: r.token });
     closeModal();
     if (r.warning) toast(`🎉 올렸어요! 그런데 ⚠️ ${r.warning}`, 9000);
-    else toast(isViewable({ fileType: r.fileType, size: file?.size || 1 }) ? '🎉 갤러리에 올렸어요! 📖 보기로 바로 열어 볼 수 있어요.' : '🎉 갤러리에 올렸어요!');
+    else toast(isViewable({ fileType: r.fileType, size: file?.size || 1, via: mode === 'file' ? 'file' : 'link' }) ? '🎉 갤러리에 올렸어요! 📖 보기로 바로 열어 볼 수 있어요.' : '🎉 갤러리에 올렸어요!');
     await load({ quiet: true });
   } catch {
     fail('인터넷 연결을 확인하고 다시 눌러 주세요.');
@@ -624,6 +662,7 @@ async function openViewer(id) {
   const it = state.data?.items.find((x) => x.id === id);
   if (!it) return;
   const seq = ++viewSeq;
+  setBugScreen('갤러리 작품 보기');
   const modal = $('#g-modal');
   modal.innerHTML = `
     <div class="g-viewer" role="dialog" aria-modal="true" aria-label="${esc(it.title)}">
@@ -760,6 +799,7 @@ function openQr() {
 function closeModal() {
   const modal = $('#g-modal');
   if (!modal) return;
+  if (state.scriptUrl) setBugScreen('갤러리 목록');
   viewSeq++;
   pageUrls.forEach((u) => URL.revokeObjectURL(u));
   pageUrls = [];
@@ -779,7 +819,8 @@ root.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-g]');
   if (!el) return;
   const act = el.dataset.g;
-  if (act === 'copy-code') toast((await copyText(appsScriptSource)) ? '📋 코드를 복사했어요. Apps Script에 붙여 넣으세요.' : '복사하지 못했어요. 코드 미리 보기에서 직접 복사해 주세요.');
+  if (act === 'copy-code') toast((await copyText(appsScriptSource)) ? '📋 Code.gs를 복사했어요. Apps Script에 붙여 넣으세요.' : '복사하지 못했어요. 코드 미리 보기에서 직접 복사해 주세요.');
+  else if (act === 'copy-manifest') toast((await copyText(manifestSource)) ? '📋 appsscript.json을 복사했어요. 매니페스트 파일에 붙여 넣으세요.' : '복사하지 못했어요. 코드 미리 보기에서 직접 복사해 주세요.');
   else if (act === 'check') await checkConnection();
   else if (act === 'copy-link') toast((await copyText($('#g-link').value)) ? '📋 주소를 복사했어요.' : '복사하지 못했어요.');
   else if (act === 'refresh') await load();
@@ -790,6 +831,7 @@ root.addEventListener('click', async (e) => {
   else if (act === 'view') await openViewer(el.dataset.id);
   else if (act === 'mode') setAddMode(el.dataset.mode);
   else if (act === 'switch') openSwitch();
+  else if (act === 'bug') openBugReport();
   else if (act === 'delete') await removeMine(el.dataset.id);
 });
 
