@@ -86,3 +86,4 @@ a.btn.btn-primary { color: #FFFFFF; }
   .gd-two { grid-template-columns: 1fr; }
   .gd-card { padding: 16px; }
 }
+.gd-copy-btn { margin: 4px 0 12px; }

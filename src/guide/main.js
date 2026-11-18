@@ -10,6 +10,7 @@ import './guide.css';
 import qrcode from 'qrcode-generator';
 import { GUIDE_VIDEOS, MAKER } from './config.js';
 import { youtubeId } from './youtube.js';
+import { templateId } from '../gallery/config.js';
 import { escapeHtml as esc } from '../templates/portfolioRenderer.js';
 import { openBugReport, setBugScreen } from '../utils/bugReport.js';
 
@@ -35,6 +36,34 @@ function videoHtml(v, i) {
         allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
       <figcaption>${esc(v.title)} · <a href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener">유튜브에서 보기 ↗</a></figcaption>
     </figure>`;
+}
+
+/** 선생님 카드: 템플릿 시트가 정해져 있으면 ‘📋 갤러리 시트 복사하기’(3단계), 없으면 직접 만들기 안내 */
+function teacherCardHtml() {
+  const tid = templateId();
+  if (tid) {
+    return `
+        <h2>👩‍🏫 선생님: 우리 반 갤러리 만들기</h2>
+        <p>구글 계정만 있으면 <b>5분, 반마다 한 번</b>이면 돼요. 코드를 붙여 넣을 필요 없어요. 서버·비용 없이 무료예요.</p>
+        <a class="btn btn-primary btn-lg btn-block gd-copy-btn" id="gd-template-copy" href="https://docs.google.com/spreadsheets/d/${esc(tid)}/copy" target="_blank" rel="noopener">📋 1. 갤러리 시트 복사하기 ↗</a>
+        <ol class="gd-steps gd-steps-small">
+          <li><b>1</b><span>위 버튼 → <b>‘사본 만들기’</b> (내 드라이브에 생겨요 · 원하는 폴더로 옮겨도 돼요)</span></li>
+          <li><b>2</b><span>복사한 시트의 확장 프로그램 → Apps Script → <b>배포 → 새 배포 → 웹 앱</b>(실행: 나, 액세스: 모든 사용자) → 권한 허용 → 웹 앱 주소 복사</span></li>
+          <li><b>3</b><span>아래 ‘갤러리 연결하기’에 웹 앱 주소를 붙여 넣고 <b>연결 확인</b> → 나오는 <b>갤러리 주소·QR</b>을 학생들에게 알려 줘요.</span></li>
+        </ol>
+        <a class="btn btn-lg btn-block" href="./gallery.html">2·3. 갤러리 연결하기 (자세한 안내) →</a>`;
+  }
+  return `
+        <h2>👩‍🏫 선생님: 우리 반 갤러리 만들기</h2>
+        <p>구글 계정만 있으면 <b>10분, 반마다 한 번</b>이면 돼요. 서버·비용 없이 무료예요.</p>
+        <ol class="gd-steps gd-steps-small">
+          <li><b>1</b><span>구글 시트를 원하는 폴더에 새로 만들어요.</span></li>
+          <li><b>2</b><span>확장 프로그램 → Apps Script에 <b>Code.gs</b>와 <b>appsscript.json</b>을 붙여 넣어요(복사 버튼 있음).</span></li>
+          <li><b>3</b><span><b>배포 → 새 배포 → 웹 앱</b>(실행: 나, 액세스: 모든 사용자) → 권한 허용</span></li>
+          <li><b>4</b><span>웹 앱 주소를 붙여 넣고 <b>연결 확인</b> → 나오는 <b>갤러리 주소·QR</b>을 학생들에게 알려 줘요.</span></li>
+        </ol>
+        <p class="gd-note">📋 곧 <b>갤러리 시트 복사하기</b>(코드 붙여넣기 없이 3단계)가 생겨요.</p>
+        <a class="btn btn-primary btn-lg btn-block" href="./gallery.html">갤러리 만들기 시작 →</a>`;
 }
 
 function render() {
@@ -84,16 +113,7 @@ function render() {
     </section>
 
     <section class="gd-section gd-two" id="teacher">
-      <div class="gd-card gd-card-teacher">
-        <h2>👩‍🏫 선생님: 우리 반 갤러리 만들기</h2>
-        <p>구글 계정만 있으면 <b>10분, 한 번만</b> 하면 돼요. 서버·비용 없이 무료예요.</p>
-        <ol class="gd-steps gd-steps-small">
-          <li><b>1</b><span><b>📋 갤러리 시트 복사하기</b> → ‘사본 만들기’ (코드 붙여넣기 없음 · 원하는 폴더로 옮겨도 돼요)</span></li>
-          <li><b>2</b><span>시트의 확장 프로그램 → Apps Script → <b>배포 → 새 배포 → 웹 앱</b>(실행: 나, 액세스: 모든 사용자) → 권한 허용</span></li>
-          <li><b>3</b><span>웹 앱 주소를 붙여 넣고 <b>연결 확인</b> → 나오는 <b>갤러리 주소·QR</b>을 학생들에게 알려 줘요.</span></li>
-        </ol>
-        <a class="btn btn-primary btn-lg btn-block" href="./gallery.html">갤러리 만들기 시작 →</a>
-      </div>
+      <div class="gd-card gd-card-teacher">${teacherCardHtml()}</div>
       <div class="gd-card">
         <h2>🔒 안전하게 쓰기</h2>
         <ul class="gd-list">
