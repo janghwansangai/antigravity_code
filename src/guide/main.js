@@ -88,11 +88,9 @@ function render() {
         <h2>👩‍🏫 선생님: 우리 반 갤러리 만들기</h2>
         <p>구글 계정만 있으면 <b>10분, 한 번만</b> 하면 돼요. 서버·비용 없이 무료예요.</p>
         <ol class="gd-steps gd-steps-small">
-          <li><b>1</b><span>구글 시트를 원하는 폴더에 새로 만들어요.</span></li>
-          <li><b>2</b><span>확장 프로그램 → Apps Script에 <b>Code.gs</b>와 <b>appsscript.json</b>을 붙여 넣어요(복사 버튼 있음).</span></li>
-          <li><b>3</b><span>‘준비하기’ ▶ 실행 → 권한 허용 (🔒 권한 확인 완료가 나오면 성공)</span></li>
-          <li><b>4</b><span>배포 → 새 배포 → 웹 앱(실행: 나, 액세스: 모든 사용자)</span></li>
-          <li><b>5</b><span>웹 앱 주소를 붙여 넣으면 나오는 <b>갤러리 주소·QR</b>을 학생들에게 알려 줘요.</span></li>
+          <li><b>1</b><span><b>📋 갤러리 시트 복사하기</b> → ‘사본 만들기’ (코드 붙여넣기 없음 · 원하는 폴더로 옮겨도 돼요)</span></li>
+          <li><b>2</b><span>시트의 확장 프로그램 → Apps Script → <b>배포 → 새 배포 → 웹 앱</b>(실행: 나, 액세스: 모든 사용자) → 권한 허용</span></li>
+          <li><b>3</b><span>웹 앱 주소를 붙여 넣고 <b>연결 확인</b> → 나오는 <b>갤러리 주소·QR</b>을 학생들에게 알려 줘요.</span></li>
         </ol>
         <a class="btn btn-primary btn-lg btn-block" href="./gallery.html">갤러리 만들기 시작 →</a>
       </div>
@@ -117,6 +115,8 @@ function render() {
         <details><summary>갤러리에 올릴 때 PDF와 웹페이지 중 무엇이 좋아요?</summary><p><b>PDF(추천)</b>가 가장 가볍고 빨리 열려요. 동영상까지 재생하고 싶으면 <b>웹페이지</b>를 고르세요(큰 동영상은 썸네일로 바뀌어요).</p></details>
         <details><summary>다른 반 갤러리에 올려야 해요.</summary><p>③단계 ‘우리 반 갤러리’에서 <b>🔄 다른 갤러리로 바꾸기</b>를 누르거나, 그 반 갤러리 QR을 한 번 열면 바뀌어요. 공유 창에 올라갈 갤러리 이름이 보이니 확인하세요.</p></details>
         <details><summary>인터넷이 없는 곳에서도 쓸 수 있나요?</summary><p>포트폴리오 만들기는 한 번 열어 두면 대부분 동작해요. 갤러리 올리기·보기는 인터넷이 필요해요.</p></details>
+        <details><summary>친구 작품에 댓글을 달 수 있나요?</summary><p>네. 갤러리의 작품마다 <b>💬 댓글</b> 칸이 있어요. 댓글이 많아져도 그 작품 칸 안에서만 스크롤되니 갤러리가 길어지지 않아요. 작품을 새 파일로 바꿔 올려도(🚀 다시 공유하기·‘바꾸기’) 댓글은 그대로 남아요.</p></details>
+        <details><summary>선생님이 작품이나 댓글을 지울 수 있나요?</summary><p>네. 갤러리 위쪽 <b>🔑 선생님</b>을 누르고 시트 ‘설정’ 탭의 <b>선생님 관리 코드</b>를 적으면, 그 기기에서 모든 작품과 댓글에 지우기 버튼이 생겨요. 시트에서 줄을 지우거나 ‘숨김’에 TRUE를 적어도 돼요.</p></details>
         <details><summary>오류가 생기거나 좋은 생각이 있어요.</summary><p>화면 오른쪽 아래 <b>🐞 오류 신고</b> 버튼이나 아래 링크로 알려 주세요. 다있쌤이 확인해요.</p></details>
       </div>
     </section>

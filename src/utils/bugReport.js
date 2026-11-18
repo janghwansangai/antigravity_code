@@ -9,7 +9,7 @@
  */
 const REPORT_URL = 'https://script.google.com/macros/s/AKfycbxsRD7vRlEP9oKlvlDDPww8cYaDadTTIp1KrqYWSVU5qE5_gUh3bNUskBhHDlXH6FskvA/exec';
 const APP_ID = 'portpolio';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 let current = '';
 

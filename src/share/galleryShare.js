@@ -103,7 +103,8 @@ export async function hydrateGallerySection($) {
   const el = $('#gallery-title');
   if (!g || !el) return;
   try {
-    const data = await galleryInfo(g.scriptUrl);
+    // 화면을 다시 그릴 때마다 묻지 않고, 이 페이지에서 한 번 받아 둔 제목을 씀
+    const data = infoCache?.scriptUrl === g.scriptUrl ? infoCache.data : await galleryInfo(g.scriptUrl);
     if ($('#gallery-title')) $('#gallery-title').textContent = data.title;
   } catch {
     /* 인터넷이 안 되면 기억해 둔 제목 그대로 */
@@ -187,7 +188,7 @@ export async function openShareModal(ctx) {
       ${data.needCode ? `<label class="field"><span class="field-label">학급 코드<span class="field-hint"> · 선생님이 알려 준 코드</span></span><input class="input" name="code" maxlength="30" required autocomplete="off" value="${esc(me.code || '')}" /></label>` : ''}
       ${
         canReplace
-          ? `<label class="share-replace"><input type="checkbox" name="replace" checked /> 전에 올린 ‘${esc(prev.title)}’을(를) 새것으로 바꾸기 <small>(끄면 하나 더 올라가요)</small></label>`
+          ? `<label class="share-replace"><input type="checkbox" name="replace" checked /> 전에 올린 ‘${esc(prev.title)}’을(를) 새것으로 바꾸기 <small>(댓글은 그대로 · 끄면 하나 더 올라가요)</small></label>`
           : ''
       }
       <div class="share-progress" id="share-progress" hidden><div class="share-bar"><i id="share-bar"></i></div><p id="share-status" role="status"></p></div>
@@ -288,7 +289,7 @@ function showDone(ctx, g, { r, blob, format, skipped, copied }) {
   if (!card) return;
   card.innerHTML = `
     <div class="modal-head"><h2>🎉 갤러리에 올렸어요!</h2><button type="button" class="btn btn-ghost btn-sm" data-action="close-share" aria-label="닫기">✕</button></div>
-    <p class="share-done">${r.replaced ? '전에 올린 작품을 새것으로 바꿨어요.' : '친구들이 우리 반 갤러리에서 바로 볼 수 있어요.'}<br />
+    <p class="share-done">${r.replaced ? '전에 올린 작품을 새것으로 바꿨어요. 친구들이 단 댓글은 그대로예요.' : '친구들이 우리 반 갤러리에서 바로 볼 수 있어요.'}<br />
       <small>${format === 'pdf' ? '📄 PDF' : '🌐 웹페이지'} · ${formatBytes(blob.size)}${skipped ? ` · 큰 동영상·파일 ${skipped}개는 썸네일·안내로 바꿔 가볍게 올렸어요` : ''}</small></p>
     ${r.shared === 'private' ? '<p class="pane-hint small">선생님 드라이브 설정 때문에 링크로는 열리지 않을 수 있지만, 갤러리에서는 볼 수 있어요.</p>' : ''}
     <div class="share-done-actions">
