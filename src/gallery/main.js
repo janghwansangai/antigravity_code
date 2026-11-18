@@ -216,7 +216,7 @@ function setupStepsHtml() {
           <p class="small muted">권한 화면에는 ‘이 스프레드시트’와 ‘이 앱에서 사용하는 특정 Google Drive 파일만’이 나와요. 선생님 드라이브의 다른 파일은 볼 수 없어요. 학교 계정에서 ‘모든 사용자’가 보이지 않으면 학교 관리자가 막아 둔 것이라 개인 구글 계정으로 만들면 됩니다.</p>`;
   const connect = `
         <li>
-          <b>웹 앱 URL을 붙여 넣고 연결을 확인해요.</b> 첫 연결 때 작품 폴더·선생님 관리 코드·권한 확인이 저절로 준비돼요.
+          <b>웹 앱 URL을 붙여 넣고 연결을 확인해요.</b> 첫 연결 때 작품 폴더·선생님 관리 코드·권한 확인이 저절로 준비돼요. 배포한 시트(복사했다면 ‘…의 사본’) 아래쪽에 <b>‘설정’·‘작품’·‘댓글’ 탭</b>이 생겨요.
           <div class="g-row">
             <input class="input" id="g-script-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" />
             <button type="button" class="btn btn-primary" data-g="check">연결 확인</button>
@@ -503,7 +503,7 @@ function openAdmin() {
   modal.innerHTML = `
     <form class="modal-card g-form" id="g-admin-form" novalidate>
       <div class="modal-head"><h2>🔑 선생님 모드</h2><button type="button" class="btn btn-ghost btn-sm" data-g="close" aria-label="닫기">✕</button></div>
-      <p class="pane-hint">갤러리 구글 시트의 <b>‘설정’ 탭 → 선생님 관리 코드</b>를 적으면, 이 기기에서 모든 작품과 댓글을 지울 수 있어요. (학생에게는 알려 주지 마세요)</p>
+      <p class="pane-hint">웹 앱을 배포한 구글 시트(템플릿을 복사했다면 <b>‘…의 사본’</b>, 원본 템플릿 아님) 아래쪽 <b>‘설정’ 탭 → 맨 아래 ‘선생님 관리 코드’</b>(처음엔 T로 시작하는 8글자)를 적으면, 이 기기에서 모든 작품과 댓글을 지울 수 있어요. 탭이 안 보이면 시트를 새로 고침(F5)해 보세요. (학생에게는 알려 주지 마세요)</p>
       <label class="field"><span class="field-label">선생님 관리 코드</span><input class="input" name="key" maxlength="40" autocomplete="off" required /></label>
       <p class="g-form-error" id="g-form-error" role="alert"></p>
       <button type="submit" class="btn btn-primary btn-lg btn-block">선생님 모드 켜기</button>
