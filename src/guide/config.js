@@ -6,7 +6,7 @@
  *    영상을 더 넣고 싶으면 { title, url } 줄을 더 추가하세요. url이 비어 있으면 '준비 중'으로 보입니다.
  */
 export const GUIDE_VIDEOS = [
-  { title: '프로그램 소개와 사용법', url: '' }
+  { title: '프로그램 소개와 사용법', url: 'https://youtu.be/7_HxSnoUmDY' }
 ];
 
 /** 만든 사람 */
