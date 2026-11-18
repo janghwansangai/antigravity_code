@@ -1,26 +1,31 @@
 /**
- * 우리 반 작품 갤러리 - 서버 (Google Apps Script) · 버전 2
+ * 우리 반 작품 갤러리 - 서버 (Google Apps Script) · 버전 3
  *
  * 선생님의 구글 시트에 붙여서 '웹 앱'으로 배포합니다.
  *   - 학생: 포트폴리오 앱의 [🚀 갤러리에 공유하기] 또는 갤러리의 [＋ 내 작품 올리기]
- *           → 파일이 선생님 드라이브의 '작품 폴더'에 저장되고, 링크가 이 시트에 자동으로 한 줄씩 쌓임
- *           (구글 드라이브 공유 링크를 직접 붙여 넣는 것도 됨)
- *   - 갤러리: 이 웹 앱에서 목록·썸네일을 받아 카드로 보여 줌
+ *           → 파일이 이 갤러리가 만든 '작품 폴더'에 저장되고, 이 시트에 한 줄씩 쌓임
+ *           (학생 자신의 구글 드라이브 공유 링크를 붙여 넣는 것도 됨)
+ *   - 갤러리: 이 웹 앱에서 목록·썸네일·작품 파일을 받아 보여 줌
  *   - 선생님: 시트에서 줄을 지우거나 '숨김' 칸에 TRUE를 적으면 갤러리에서 사라짐
  *
- * 📖 포트폴리오 보기: PDF·ZIP·웹페이지(.html)·프로젝트 파일(.portfolio)은 갤러리가 이 웹 앱을 통해
- *   파일을 조금씩 받아 브라우저 안에서 펼쳐 보여 줍니다.
- *   - 갤러리에 올라온(숨기지 않은) 작품의 파일만 읽습니다. 다른 드라이브 파일은 읽지 않습니다.
+ * 🔒 보안: 함께 붙여 넣는 appsscript.json이 이 코드가 쓸 수 있는 권한을 딱 세 가지로 묶습니다.
+ *   - spreadsheets.currentonly : 이 시트 하나만 (다른 스프레드시트는 못 봄)
+ *   - drive.file               : 이 갤러리가 직접 만든 폴더·파일만 (선생님 드라이브의 다른 파일은 목록도 내용도 못 봄)
+ *   - script.external_request  : 구글 드라이브에 파일을 올리고 읽는 연결
+ *   이 코드에는 DriveApp(드라이브 전체 권한)를 쓰는 곳이 없습니다.
+ *   '준비하기'를 실행하면 실제 권한을 확인해 결과를 알려 줍니다.
  *
  * 설정은 '설정' 탭에서 바꿉니다(처음 실행할 때 자동으로 만들어짐).
- *   갤러리 제목 | 학급 코드(비워 두면 코드 없이 올리기) | 올리기 허용(TRUE/FALSE) | 작품 폴더(드라이브 폴더 주소, 비우면 자동으로 만듦)
+ *   갤러리 제목 | 학급 코드 | 올리기 허용 | 작품 폴더(자동, 드라이브에서 원하는 곳으로 옮겨도 됨) | 파일 링크 공유 | 저장 용량 한도(GB)
  *
- * 처음 설치: 이 코드 붙여넣기 → 💾 저장 → 위 함수 목록에서 '준비하기' 선택 → ▶ 실행 → 권한 허용
- *            → 배포 → 새 배포 → 유형 '웹 앱' · 실행 사용자 '나' · 액세스 '모든 사용자' → 웹 앱 URL 복사
- * 코드를 바꾼 뒤: '준비하기' ▶ 실행(권한 허용) → 배포 → 배포 관리 → ✏️ 수정 → 버전 '새 버전' → 배포 (주소는 그대로)
+ * 처음 설치(자세한 안내는 갤러리 만들기 화면):
+ *   1) 이 코드와 appsscript.json 붙여넣기 → 💾 저장
+ *   2) 함수 목록에서 '준비하기' → ▶ 실행 → 권한 허용
+ *   3) 배포 → 새 배포 → 웹 앱(실행 사용자 '나', 액세스 '모든 사용자') → 웹 앱 URL 복사
+ * 코드를 바꾼 뒤: '준비하기' ▶ 실행 → 배포 → 배포 관리 → ✏️ 수정 → 버전 '새 버전' → 배포 (주소는 그대로)
  */
 
-var VERSION = 2;
+var VERSION = 3;
 var ITEMS_SHEET = '작품';
 var SETTINGS_SHEET = '설정';
 var HEADERS = ['올린 시간', '번호', '이름', '제목', '링크', '설명', '숨김', '삭제 열쇠', '파일 이름', '파일 종류', '파일 크기', '올린 방식', '썸네일'];
@@ -33,20 +38,48 @@ var CHUNK_MAX = 4 * 1024 * 1024; // 보기: 한 번에 보내는 크기(받는 �
 var MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 올리기: 한 파일 최대 크기
 var SINGLE_UPLOAD_MAX = 6 * 1024 * 1024; // 이보다 작으면 한 번에, 크면 4MB씩 나눠 올림
 var UPLOAD_CHUNK = 4 * 1024 * 1024; // 나눠 올리기 크기(256KB의 배수여야 함)
+var DEFAULT_TOTAL_GB = 3; // 이 갤러리에 올릴 수 있는 전체 용량(설정에서 바꿈)
+var RATE_PER_MIN = 120; // 1분에 받는 올리기 요청 수(낯선 사람이 마구 올리는 것 막기)
 var LIST_CACHE_SEC = 20; // 여러 학생이 한꺼번에 열어도 시트를 매번 읽지 않도록 잠깐 기억
 var FOLDER_NAME = '우리 반 갤러리 작품';
+var FOLDER_MIME = 'application/vnd.google-apps.folder';
+var DRIVE = 'https://www.googleapis.com/drive/v3/';
+var DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/';
+var SAFE_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets.currentonly',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/script.external_request'
+];
 
 /** 처음 한 번(그리고 코드를 바꾼 뒤): 위 함수 목록에서 이 함수를 고르고 ▶ 실행 → 권한 허용 */
 function 준비하기() {
   readSettings_();
   itemsSheet_();
-  var folder = uploadFolder_();
-  Logger.log('준비 완료! 학생 작품이 저장될 폴더: ' + folder.getUrl());
+  var check = checkScopes_();
+  var folderId = uploadFolder_();
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('READY', String(VERSION));
+  props.setProperty('SAFE_SCOPES', check.safe ? '1' : '0');
+  CacheService.getScriptCache().remove('list');
+  Logger.log('작품 폴더: ' + folderUrl_(folderId));
+  Logger.log(check.safe
+    ? '🔒 권한 확인 완료: 이 시트와 갤러리가 만든 파일만 다룹니다(선생님 드라이브의 다른 파일은 볼 수 없음).'
+    : '⚠️ 권한이 너무 넓어요: ' + check.extra.join(', ') + ' — appsscript.json을 갤러리 안내대로 붙여 넣고 다시 실행해 주세요.');
+  if (!check.safe) throw new Error('appsscript.json 설정을 확인해 주세요(권한이 너무 넓음).');
 }
 
 /** '준비하기'와 같음 (함수 목록에 한글 이름이 안 보이면 이것을 실행) */
 function setup() {
   준비하기();
+}
+
+/** 지금 이 코드가 가진 권한이 안전한 세 가지뿐인지 확인 */
+function checkScopes_() {
+  var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(ScriptApp.getOAuthToken()), { muteHttpExceptions: true });
+  var scopes = res.getResponseCode() === 200 ? String(JSON.parse(res.getContentText()).scope || '').split(/\s+/) : [];
+  var extra = scopes.filter(function (s) { return s && SAFE_SCOPES.indexOf(s) < 0; });
+  var missing = SAFE_SCOPES.filter(function (s) { return scopes.indexOf(s) < 0; });
+  return { safe: scopes.length > 0 && extra.length === 0 && missing.length === 0, extra: extra, missing: missing };
 }
 
 function doGet(e) {
@@ -57,7 +90,7 @@ function doGet(e) {
     else if (params.action === 'thumbs') result = readThumbs_(params);
     else result = cachedList_();
   } catch (err) {
-    result = { ok: false, error: '읽지 못했어요: ' + err };
+    result = { ok: false, error: '읽지 못했어요. 잠시 뒤 다시 해 주세요.' };
   }
   return output_(result, params.callback);
 }
@@ -77,7 +110,7 @@ function doPost(e) {
     if (body.action === 'uploadChunk') return output_(forgetList_(uploadChunk_(body)));
     return output_({ ok: false, error: '알 수 없는 요청이에요.' });
   } catch (err) {
-    return output_({ ok: false, error: '처리하지 못했어요: ' + err });
+    return output_({ ok: false, error: '처리하지 못했어요. 잠시 뒤 다시 해 주세요.' });
   }
 }
 
@@ -94,6 +127,115 @@ function withLock_(fn) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ---------------- 구글 드라이브 (이 갤러리가 만든 파일만: drive.file) ---------------- */
+function api_(method, url, body, headers) {
+  var opt = { method: method, muteHttpExceptions: true, headers: headers || {} };
+  opt.headers.Authorization = 'Bearer ' + ScriptApp.getOAuthToken();
+  if (body !== undefined) {
+    opt.contentType = 'application/json; charset=UTF-8';
+    opt.payload = JSON.stringify(body);
+  }
+  return UrlFetchApp.fetch(url, opt);
+}
+
+function apiJson_(method, url, body) {
+  var res = api_(method, url, body);
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+  return { code: code, data: code >= 200 && code < 300 && text ? JSON.parse(text) : null };
+}
+
+/** 파일 정보 (이 갤러리가 만든 파일이 아니면 드라이브가 '없음'으로 답함 → null) */
+function fileMeta_(id) {
+  if (!/^[\w-]{10,}$/.test(String(id || ''))) return null;
+  return apiJson_('get', DRIVE + 'files/' + encodeURIComponent(id) + '?fields=id,name,mimeType,size,trashed&supportsAllDrives=true').data;
+}
+
+function folderUrl_(id) {
+  return 'https://drive.google.com/drive/folders/' + id;
+}
+
+/**
+ * 학생 작품을 저장할 폴더(이 갤러리가 만든 폴더)
+ * 선생님은 드라이브에서 이 폴더를 원하는 곳(학급 폴더 등)으로 옮기거나 이름을 바꿔도 됩니다. 옮겨도 계속 이 폴더에 저장됩니다.
+ */
+function uploadFolder_() {
+  var settings = readSettings_();
+  var props = PropertiesService.getScriptProperties();
+  var cache = CacheService.getScriptCache();
+  var saved = props.getProperty('UPLOAD_FOLDER_ID');
+  var ids = [settings.folder, saved];
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i];
+    if (!id) continue;
+    var good = !!cache.get('folderOk:' + id);
+    if (!good) {
+      var meta = fileMeta_(id);
+      good = !!(meta && meta.mimeType === FOLDER_MIME && !meta.trashed);
+      if (good) cache.put('folderOk:' + id, '1', 600);
+    }
+    if (good) {
+      if (id !== saved) props.setProperty('UPLOAD_FOLDER_ID', id);
+      if (id !== settings.folder) writeFolderCell_(id, settings.folder ? 'other' : '');
+      return id;
+    }
+  }
+  var made = apiJson_('post', DRIVE + 'files?fields=id&supportsAllDrives=true', { name: FOLDER_NAME, mimeType: FOLDER_MIME });
+  if (!made.data) throw new Error('작품 폴더를 만들지 못했어요(' + made.code + '). appsscript.json을 확인하고 준비하기를 다시 실행해 주세요.');
+  props.setProperty('UPLOAD_FOLDER_ID', made.data.id);
+  cache.put('folderOk:' + made.data.id, '1', 600);
+  writeFolderCell_(made.data.id, settings.folder ? 'other' : '');
+  return made.data.id;
+}
+
+function writeFolderCell_(id, why) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SETTINGS_SHEET);
+  if (!sheet) return;
+  sheet.getRange(4, 2).setValue(folderUrl_(id));
+  sheet
+    .getRange(4, 3)
+    .setValue(
+      why === 'other'
+        ? '적어 둔 폴더는 이 갤러리가 만든 폴더가 아니라서 쓸 수 없어요(보안: 갤러리는 자기가 만든 폴더만 다룸). 위 폴더를 드라이브에서 원하는 곳으로 옮겨 쓰세요.'
+        : '이 폴더를 드라이브에서 원하는 곳으로 옮기거나 이름을 바꿔도 계속 여기에 저장돼요.'
+    );
+}
+
+/** 이어 올리기 시작 → 드라이브가 주는 올리기 주소 */
+function startSession_(v, folderId) {
+  var res = api_(
+    'post',
+    DRIVE_UPLOAD + 'files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size',
+    { name: v.fileName, parents: [folderId], mimeType: v.mimeType },
+    { 'X-Upload-Content-Type': v.mimeType, 'X-Upload-Content-Length': String(v.size) }
+  );
+  var h = res.getAllHeaders();
+  var session = h.Location || h.location;
+  if (res.getResponseCode() !== 200 || !session) throw new Error('session ' + res.getResponseCode());
+  return String(session);
+}
+
+/** 한 조각 올리기 → { done, next, info } */
+function putChunk_(session, bytes, start, total, mimeType) {
+  var end = start + bytes.length - 1;
+  var res = UrlFetchApp.fetch(session, {
+    method: 'put',
+    contentType: mimeType,
+    payload: bytes,
+    headers: { 'Content-Range': 'bytes ' + start + '-' + end + '/' + total },
+    muteHttpExceptions: true,
+    followRedirects: false
+  });
+  var code = res.getResponseCode();
+  if (code === 308) {
+    var h = res.getAllHeaders();
+    var m = String(h.Range || h.range || '').match(/bytes=0-(\d+)/);
+    return { done: false, next: m ? Number(m[1]) + 1 : end + 1 };
+  }
+  if (code === 200 || code === 201) return { done: true, info: JSON.parse(res.getContentText()) };
+  throw new Error('chunk ' + code);
 }
 
 /* ---------------- 목록 ---------------- */
@@ -118,9 +260,15 @@ function readRows_() {
   return last > 1 ? sheet.getRange(2, 1, last - 1, HEADERS.length).getValues() : [];
 }
 
+/** 갤러리로 '파일'을 올린 줄인가 (링크로 올린 줄과 구분) */
+function isFileRow_(r) {
+  return String(r[COL.via] || '').indexOf('파일') === 0;
+}
+
 function listItems_() {
   var settings = readSettings_();
   var rows = readRows_();
+  var props = PropertiesService.getScriptProperties();
   var items = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -135,7 +283,8 @@ function listItems_() {
       fileName: String(r[COL.fileName] || ''),
       fileType: String(r[COL.fileType] || ''),
       size: Number(r[COL.size]) || 0,
-      via: String(r[COL.via] || '') === '파일' ? 'file' : 'link',
+      via: isFileRow_(r) ? 'file' : 'link',
+      private: String(r[COL.via]) === '파일(비공개)',
       thumb: !!r[COL.thumb]
     });
   }
@@ -143,6 +292,8 @@ function listItems_() {
   return {
     ok: true,
     version: VERSION,
+    ready: props.getProperty('READY') === String(VERSION),
+    safeScopes: props.getProperty('SAFE_SCOPES') === '1',
     title: settings.title,
     needCode: !!settings.code,
     open: settings.open,
@@ -187,36 +338,23 @@ function readThumbs_(p) {
   return { ok: true, thumbs: thumbs };
 }
 
-/* ---------------- 링크로 올리기 ---------------- */
+/* ---------------- 링크로 올리기 (학생 자신의 드라이브 파일 등) ---------------- */
 function addItem_(b) {
   var v = checkPost_(b);
   if (!v.ok) return v;
   var link = String(b.link || '').trim();
   if (!/^https?:\/\/[^\s]+$/i.test(link) || link.length > MAX.link) return { ok: false, error: '링크가 올바르지 않아요. https:// 로 시작하는 주소를 붙여 넣어 주세요.', field: 'link' };
-
   var sheet = itemsSheet_();
   if (sheet.getLastRow() - 1 >= MAX_ITEMS) return { ok: false, error: '갤러리가 가득 찼어요. 선생님께 말씀드려 주세요.' };
-  // 드라이브 파일이면 이름·종류·크기를 미리 적어 둠(선생님이 볼 수 없으면 학생에게 공유 설정을 알려 줌)
-  var meta = { name: '', type: '', size: '' };
-  var warning = '';
-  var fileId = driveId_(link);
-  if (fileId) {
-    try {
-      var f = DriveApp.getFileById(fileId);
-      if (canShow_(f)) meta = { name: f.getName(), type: fileType_(f.getName(), f.getMimeType()), size: f.getSize() };
-      else warning = '이 파일은 드라이브 공유가 ‘제한됨’이라 친구들이 볼 수 없어요. 공유를 ‘링크가 있는 우리 학교 사용자(또는 모든 사용자)’로 바꿔 주세요.';
-    } catch (err) {
-      warning = '선생님이 이 파일을 열 수 없어요. 드라이브 공유를 ‘링크가 있는 우리 학교 사용자(또는 모든 사용자)’로 바꾸거나 학급 드라이브 폴더에 올려 주세요.';
-    }
-  }
+  // 링크로 올린 파일은 갤러리가 열지 않음(보안) — 보는 사람의 구글 권한으로 드라이브에서 열림
   var id = newId_();
   var token = Utilities.getUuid();
   // 학생이 쓴 글은 모두 '글자'로 저장(수식 실행·날짜/숫자 자동 변환 막기)
-  sheet.appendRow([new Date(), safe_(id), safe_(v.name), safe_(v.title), safe_(link), safe_(v.desc), false, safe_(token), safe_(meta.name), meta.type, meta.size, '링크', '']);
-  return { ok: true, id: id, token: token, warning: warning, fileType: meta.type };
+  sheet.appendRow([new Date(), safe_(id), safe_(v.name), safe_(v.title), safe_(link), safe_(v.desc), false, safe_(token), '', '', '', '링크', '']);
+  return { ok: true, id: id, token: token, fileType: '' };
 }
 
-/** 올리기 공통 확인: 열림·학급 코드·이름·제목 */
+/** 올리기 공통 확인: 열림·학급 코드·이름·제목·너무 많은 요청 */
 function checkPost_(b) {
   var settings = readSettings_();
   if (!settings.open) return { ok: false, error: '지금은 올리기가 닫혀 있어요. 선생님께 여쭤 보세요.' };
@@ -225,28 +363,47 @@ function checkPost_(b) {
   var title = clean_(b.title, MAX.title);
   if (!name) return { ok: false, error: '이름을 적어 주세요.', field: 'name' };
   if (!title) return { ok: false, error: '제목을 적어 주세요.', field: 'title' };
-  return { ok: true, name: name, title: title, desc: clean_(b.desc, MAX.desc) };
+  if (tooBusy_()) return { ok: false, error: '지금 올리는 친구가 아주 많아요. 1분 뒤 다시 눌러 주세요.' };
+  return { ok: true, name: name, title: title, desc: clean_(b.desc, MAX.desc), settings: settings };
 }
 
-/* ---------------- 파일로 올리기 (선생님 드라이브 '작품 폴더'에 저장) ---------------- */
+function tooBusy_() {
+  var cache = CacheService.getScriptCache();
+  var key = 'rate:' + Math.floor(Date.now() / 60000);
+  var n = Number(cache.get(key) || 0) + 1;
+  cache.put(key, String(n), 120);
+  return n > RATE_PER_MIN;
+}
+
+/* ---------------- 파일로 올리기 (이 갤러리의 작품 폴더에 저장) ---------------- */
 function checkUpload_(b) {
   var v = checkPost_(b);
   if (!v.ok) return v;
   var size = Number(b.size);
   if (!(size > 0)) return { ok: false, error: '빈 파일은 올릴 수 없어요.' };
   if (size > MAX_UPLOAD_BYTES) return { ok: false, error: '파일이 너무 커요(' + Math.round(MAX_UPLOAD_BYTES / 1048576) + 'MB까지).' };
+  var rows = readRows_();
+  if (!b.replaceId && rows.length >= MAX_ITEMS) return { ok: false, error: '갤러리가 가득 찼어요. 선생님께 말씀드려 주세요.' };
+  var used = 0;
+  for (var i = 0; i < rows.length; i++) if (isFileRow_(rows[i])) used += Number(rows[i][COL.size]) || 0;
+  if (used + size > v.settings.maxTotal) return { ok: false, error: '갤러리 저장 공간이 가득 찼어요. 선생님께 말씀드려 주세요.' };
   var fileName = clean_(b.fileName, MAX.fileName).replace(/[\\/:*?"<>|]/g, '_') || '작품';
   var mimeType = /^[\w.+-]+\/[\w.+-]+$/.test(String(b.mimeType || '')) ? String(b.mimeType) : 'application/octet-stream';
   var thumb = String(b.thumb || '');
   if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(thumb) || thumb.length > MAX.thumb) thumb = '';
-  if (!b.replaceId && itemsSheet_().getLastRow() - 1 >= MAX_ITEMS) return { ok: false, error: '갤러리가 가득 찼어요. 선생님께 말씀드려 주세요.' };
-  v.size = size;
-  v.fileName = fileName;
-  v.mimeType = mimeType;
-  v.thumb = thumb;
-  v.replaceId = String(b.replaceId || '');
-  v.replaceToken = String(b.replaceToken || '');
-  return v;
+  return {
+    ok: true,
+    name: v.name,
+    title: v.title,
+    desc: v.desc,
+    shareFiles: v.settings.shareFiles,
+    size: size,
+    fileName: fileName,
+    mimeType: mimeType,
+    thumb: thumb,
+    replaceId: String(b.replaceId || ''),
+    replaceToken: String(b.replaceToken || '')
+  };
 }
 
 /** 작은 파일: 한 번에 */
@@ -255,31 +412,28 @@ function uploadSingle_(b) {
   if (!v.ok) return v;
   var bytes = Utilities.base64Decode(String(b.data || ''));
   if (bytes.length !== v.size || bytes.length > SINGLE_UPLOAD_MAX) return { ok: false, error: '파일을 다 받지 못했어요. 다시 눌러 주세요.' };
-  var file = uploadFolder_().createFile(Utilities.newBlob(bytes, v.mimeType, v.fileName));
-  return finishUpload_(v, file);
+  try {
+    var session = startSession_(v, uploadFolder_());
+    var r = putChunk_(session, bytes, 0, v.size, v.mimeType);
+    if (!r.done) return { ok: false, error: '드라이브에 다 올리지 못했어요. 다시 눌러 주세요.' };
+    return finishUpload_(v, r.info);
+  } catch (err) {
+    return { ok: false, error: '드라이브에 올리지 못했어요. 잠시 뒤 다시 해 주세요.' };
+  }
 }
 
 /** 큰 파일: 드라이브 '이어 올리기'를 시작하고 번호를 돌려줌 */
 function uploadStart_(b) {
   var v = checkUpload_(b);
   if (!v.ok) return v;
-  var folder = uploadFolder_();
-  var res = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
-    method: 'post',
-    contentType: 'application/json; charset=UTF-8',
-    headers: {
-      Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
-      'X-Upload-Content-Type': v.mimeType,
-      'X-Upload-Content-Length': String(v.size)
-    },
-    payload: JSON.stringify({ name: v.fileName, parents: [folder.getId()], mimeType: v.mimeType }),
-    muteHttpExceptions: true
-  });
-  var headers = res.getAllHeaders();
-  var session = headers.Location || headers.location;
-  if (res.getResponseCode() !== 200 || !session) return { ok: false, error: '드라이브에 올릴 준비를 못 했어요(' + res.getResponseCode() + '). 잠시 뒤 다시 해 주세요.' };
+  var session;
+  try {
+    session = startSession_(v, uploadFolder_());
+  } catch (err) {
+    return { ok: false, error: '드라이브에 올릴 준비를 못 했어요. 잠시 뒤 다시 해 주세요.' };
+  }
   var uploadId = Utilities.getUuid();
-  CacheService.getScriptCache().put('up:' + uploadId, JSON.stringify({ session: String(session), meta: v }), 21600);
+  CacheService.getScriptCache().put('up:' + uploadId, JSON.stringify({ session: session, meta: v }), 21600);
   return { ok: true, uploadId: uploadId, chunkSize: UPLOAD_CHUNK };
 }
 
@@ -291,37 +445,30 @@ function uploadChunk_(b) {
   var up = JSON.parse(saved);
   var start = Math.max(0, parseInt(b.start, 10) || 0);
   var bytes = Utilities.base64Decode(String(b.data || ''));
-  if (!bytes.length) return { ok: false, error: '빈 조각이에요.' };
-  var end = start + bytes.length - 1;
-  var res = UrlFetchApp.fetch(up.session, {
-    method: 'put',
-    contentType: up.meta.mimeType,
-    payload: bytes,
-    headers: { 'Content-Range': 'bytes ' + start + '-' + end + '/' + up.meta.size },
-    muteHttpExceptions: true,
-    followRedirects: false
-  });
-  var code = res.getResponseCode();
-  if (code === 308) {
-    // 드라이브가 받은 곳까지 알려 줌 (예: bytes=0-4194303)
-    var h = res.getAllHeaders();
-    var m = String(h.Range || h.range || '').match(/bytes=0-(\d+)/);
-    return { ok: true, done: false, next: m ? Number(m[1]) + 1 : end + 1 };
+  if (!bytes.length || start + bytes.length > up.meta.size) return { ok: false, error: '조각이 올바르지 않아요.' };
+  var r;
+  try {
+    r = putChunk_(up.session, bytes, start, up.meta.size, up.meta.mimeType);
+  } catch (err) {
+    return { ok: false, error: '드라이브에 올리다 멈췄어요. 다시 눌러 주세요.' };
   }
-  if (code === 200 || code === 201) {
-    cache.remove('up:' + b.uploadId);
-    var info = JSON.parse(res.getContentText());
-    return finishUpload_(up.meta, DriveApp.getFileById(info.id));
-  }
-  return { ok: false, error: '드라이브에 올리다 멈췄어요(' + code + '). 다시 눌러 주세요.' };
+  if (!r.done) return { ok: true, done: false, next: r.next };
+  cache.remove('up:' + b.uploadId);
+  return finishUpload_(up.meta, r.info);
 }
 
-/** 올린 파일: 링크로 볼 수 있게 공유하고 갤러리에 등록(또는 전에 올린 것을 바꿈) */
-function finishUpload_(v, file) {
-  var shared = shareFile_(file);
-  var link = 'https://drive.google.com/file/d/' + file.getId() + '/view?usp=sharing';
-  var type = fileType_(file.getName(), file.getMimeType());
-  var size = file.getSize();
+/** 올린 파일: (설정에 따라) 링크로 볼 수 있게 하고 갤러리에 등록(또는 전에 올린 것을 바꿈) */
+function finishUpload_(v, info) {
+  var shared = 'private';
+  if (v.shareFiles) {
+    // 이 파일 하나만 '링크가 있는 사람 보기'로 (폴더는 공유하지 않음 → 폴더 안 목록은 아무도 못 봄)
+    var p = apiJson_('post', DRIVE + 'files/' + encodeURIComponent(info.id) + '/permissions?supportsAllDrives=true', { role: 'reader', type: 'anyone', allowFileDiscovery: false });
+    if (p.data) shared = 'anyone';
+  }
+  var link = 'https://drive.google.com/file/d/' + info.id + '/view?usp=sharing';
+  var type = fileType_(info.name, info.mimeType);
+  var size = Number(info.size) || v.size;
+  var via = shared === 'anyone' ? '파일' : '파일(비공개)';
   return withLock_(function () {
     var sheet = itemsSheet_();
     if (v.replaceId && v.replaceToken) {
@@ -329,97 +476,21 @@ function finishUpload_(v, file) {
       for (var i = 0; i < rows.length; i++) {
         if (String(rows[i][COL.id]) !== v.replaceId) continue;
         if (String(rows[i][COL.token]) !== v.replaceToken) break; // 내 것이 아니면 새로 올림
-        var oldId = driveId_(String(rows[i][COL.link]));
-        var wasFile = String(rows[i][COL.via]) === '파일';
+        var oldId = isFileRow_(rows[i]) ? driveId_(String(rows[i][COL.link])) : '';
         sheet.getRange(i + 2, 1, 1, HEADERS.length).setValues([
-          [new Date(), safe_(v.replaceId), safe_(v.name), safe_(v.title), safe_(link), safe_(v.desc), rows[i][COL.hidden], safe_(v.replaceToken), safe_(file.getName()), type, size, '파일', safe_(v.thumb)]
+          [new Date(), safe_(v.replaceId), safe_(v.name), safe_(v.title), safe_(link), safe_(v.desc), rows[i][COL.hidden], safe_(v.replaceToken), safe_(info.name), type, size, via, safe_(v.thumb)]
         ]);
-        // 앱으로 올렸던 예전 파일은 휴지통으로(같은 작품의 옛 버전)
-        if (wasFile && oldId && oldId !== file.getId()) {
-          try {
-            DriveApp.getFileById(oldId).setTrashed(true);
-          } catch (err) {
-            /* 이미 없거나 권한 없음 */
-          }
-        }
+        // 같은 작품의 옛 파일은 휴지통으로 (이 갤러리가 만든 파일만 가능)
+        if (oldId && oldId !== info.id) apiJson_('patch', DRIVE + 'files/' + encodeURIComponent(oldId) + '?supportsAllDrives=true', { trashed: true });
         forgetItem_(v.replaceId);
         return { ok: true, id: v.replaceId, token: v.replaceToken, link: link, fileType: type, shared: shared, replaced: true };
       }
     }
     var id = newId_();
     var token = Utilities.getUuid();
-    sheet.appendRow([new Date(), safe_(id), safe_(v.name), safe_(v.title), safe_(link), safe_(v.desc), false, safe_(token), safe_(file.getName()), type, size, '파일', safe_(v.thumb)]);
+    sheet.appendRow([new Date(), safe_(id), safe_(v.name), safe_(v.title), safe_(link), safe_(v.desc), false, safe_(token), safe_(info.name), type, size, via, safe_(v.thumb)]);
     return { ok: true, id: id, token: token, link: link, fileType: type, shared: shared };
   });
-}
-
-/** 링크가 있는 사람은 볼 수 있게 (학교 계정이라 막혀 있으면 '우리 학교 사용자'로) */
-function shareFile_(file) {
-  try {
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return 'anyone';
-  } catch (err) {
-    try {
-      file.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
-      return 'domain';
-    } catch (err2) {
-      return 'private';
-    }
-  }
-}
-
-/**
- * 갤러리가 보여 줘도 되는 파일인가?
- *   - 링크로 공유된 파일(모든 사용자·우리 학교 사용자): 원래 링크만 있으면 볼 수 있으므로 OK
- *   - 갤러리로 올린 파일(작품 폴더 안): OK (학교 설정 때문에 공유가 막혀 있어도)
- *   - 그 밖의 '제한됨' 파일: 선생님 개인 파일일 수 있으므로 거절
- */
-function canShow_(file) {
-  try {
-    var a = file.getSharingAccess();
-    if (a === DriveApp.Access.ANYONE || a === DriveApp.Access.ANYONE_WITH_LINK || a === DriveApp.Access.DOMAIN || a === DriveApp.Access.DOMAIN_WITH_LINK) return true;
-  } catch (err) {
-    /* 확인 못 하면 아래로 */
-  }
-  var folders = uploadFolderIds_();
-  if (!folders.length) return false;
-  try {
-    var parents = file.getParents();
-    while (parents.hasNext()) if (folders.indexOf(parents.next().getId()) >= 0) return true;
-  } catch (err) {
-    /* 부모 폴더를 못 읽으면 거절 */
-  }
-  return false;
-}
-
-/** 작품 폴더 번호들('설정'의 폴더, 자동으로 만든 폴더). 만들지는 않음 */
-function uploadFolderIds_() {
-  return [readSettings_().folder, PropertiesService.getScriptProperties().getProperty('UPLOAD_FOLDER_ID')].filter(function (x) { return !!x; });
-}
-
-/** 학생 작품을 저장할 폴더: '설정'의 작품 폴더, 없으면 내 드라이브에 '우리 반 갤러리 작품'을 만들어 씀 */
-function uploadFolder_() {
-  var settings = readSettings_();
-  if (settings.folder) {
-    try {
-      return DriveApp.getFolderById(settings.folder);
-    } catch (err) {
-      /* 주소가 틀렸으면 자동 폴더로 */
-    }
-  }
-  var props = PropertiesService.getScriptProperties();
-  var savedId = props.getProperty('UPLOAD_FOLDER_ID');
-  if (savedId) {
-    try {
-      var f = DriveApp.getFolderById(savedId);
-      if (!f.isTrashed()) return f;
-    } catch (err) {
-      /* 지워졌으면 새로 만듦 */
-    }
-  }
-  var folder = DriveApp.createFolder(FOLDER_NAME);
-  props.setProperty('UPLOAD_FOLDER_ID', folder.getId());
-  return folder;
 }
 
 /* ---------------- 지우기(올린 사람만) ---------------- */
@@ -456,40 +527,32 @@ function readFileChunk_(p) {
   var meta = start > 0 ? cache.get('meta:' + item) : null;
   meta = meta ? JSON.parse(meta) : null;
   if (!meta) {
-    // 갤러리에 올라온(숨기지 않은) 작품의 드라이브 파일만 읽음
+    // 갤러리에 올라온(숨기지 않은) 작품 중 '파일로 올린 것'만 읽음 — 링크로 올린 남의 파일은 읽지 않음
     var rows = readRows_();
     var id = '';
     for (var i = 0; i < rows.length; i++) {
       if (String(rows[i][COL.id]) === item && !isTrue_(rows[i][COL.hidden])) {
+        if (!isFileRow_(rows[i])) return { ok: false, error: '이 작품은 ‘열기’로 봐 주세요.' };
         id = driveId_(String(rows[i][COL.link]));
         break;
       }
     }
-    if (!id) return { ok: false, error: '갤러리에 올라온 드라이브 파일만 볼 수 있어요.' };
-    var file = DriveApp.getFileById(id);
-    // 선생님만 볼 수 있는(공유 '제한됨') 파일은 보여 주지 않음 — 선생님 권한으로 남의 비공개 파일을 꺼내 보지 못하게
-    if (!canShow_(file)) return { ok: false, error: '이 파일은 드라이브 공유가 ‘제한됨’이라 갤러리에서 볼 수 없어요. 올린 친구에게 공유 설정을 바꿔 달라고 해 주세요.' };
-    meta = { id: id, name: file.getName(), type: fileType_(file.getName(), file.getMimeType()), size: file.getSize() };
+    if (!id) return { ok: false, error: '갤러리에 올라온 작품 파일만 볼 수 있어요.' };
+    var info = fileMeta_(id);
+    if (!info || info.trashed) return { ok: false, error: '작품 파일을 찾을 수 없어요(지워졌을 수 있어요).' };
+    meta = { id: id, name: info.name, type: fileType_(info.name, info.mimeType), size: Number(info.size) || 0 };
     cache.put('meta:' + item, JSON.stringify(meta), 120);
   }
   if (!VIEW_TYPES[meta.type]) return { ok: false, error: '이 파일은 ‘열기’로 봐 주세요.', type: meta.type };
   if (meta.size > MAX_VIEW_BYTES) return { ok: false, error: '파일이 너무 커서(200MB 초과) 갤러리에서 바로 볼 수 없어요.' };
   if (start >= meta.size) return { ok: true, name: meta.name, type: meta.type, size: meta.size, start: start, data: '' };
   var end = Math.min(meta.size, start + len) - 1;
-
-  var bytes;
-  try {
-    // 필요한 부분만 받기(큰 파일도 메모리를 아낌)
-    var res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(meta.id) + '?alt=media&supportsAllDrives=true', {
-      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), Range: 'bytes=' + start + '-' + end },
-      muteHttpExceptions: true
-    });
-    if (res.getResponseCode() !== 206 && res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode());
-    bytes = res.getContent();
-    if (res.getResponseCode() === 200 && bytes.length > end - start + 1) bytes = bytes.slice(start, end + 1);
-  } catch (err) {
-    bytes = DriveApp.getFileById(meta.id).getBlob().getBytes().slice(start, end + 1);
-  }
+  // 필요한 부분만 받기(큰 파일도 메모리를 아낌)
+  var res = api_('get', DRIVE + 'files/' + encodeURIComponent(meta.id) + '?alt=media&supportsAllDrives=true', undefined, { Range: 'bytes=' + start + '-' + end });
+  var code = res.getResponseCode();
+  if (code !== 206 && code !== 200) return { ok: false, error: '작품 파일을 읽지 못했어요. 잠시 뒤 다시 해 주세요.' };
+  var bytes = res.getContent();
+  if (code === 200 && bytes.length > end - start + 1) bytes = bytes.slice(start, end + 1);
   return { ok: true, name: meta.name, type: meta.type, size: meta.size, start: start, data: Utilities.base64Encode(bytes) };
 }
 
@@ -535,26 +598,42 @@ function itemsSheet_() {
   return sheet;
 }
 
+var SETTING_ROWS = [
+  ['갤러리 제목', '우리 반 작품 갤러리'],
+  ['학급 코드', ''],
+  ['올리기 허용', true],
+  ['작품 폴더 (자동으로 만듦 · 드라이브에서 원하는 곳으로 옮겨도 됨)', ''],
+  ['파일 링크 공유 (TRUE: 링크가 있으면 드라이브에서도 보기 · FALSE: 우리 갤러리에서만 보기)', true],
+  ['저장 용량 한도 (GB)', DEFAULT_TOTAL_GB]
+];
+
 function readSettings_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SETTINGS_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(SETTINGS_SHEET);
-    sheet.getRange(1, 1, 4, 2).setValues([
-      ['갤러리 제목', '우리 반 작품 갤러리'],
-      ['학급 코드', ''],
-      ['올리기 허용', true],
-      ['작품 폴더 (드라이브 폴더 주소, 비우면 자동으로 만듦)', '']
-    ]);
-  } else if (!sheet.getRange(4, 1).getValue()) {
-    sheet.getRange(4, 1).setValue('작품 폴더 (드라이브 폴더 주소, 비우면 자동으로 만듦)');
+    sheet.getRange(1, 1, SETTING_ROWS.length, 2).setValues(SETTING_ROWS);
   }
-  var v = sheet.getRange(1, 2, 4, 1).getValues();
+  var v = sheet.getRange(1, 1, SETTING_ROWS.length, 2).getValues();
+  // 예전 버전 시트: 빠진 줄만 채움(선생님이 적은 값은 그대로)
+  for (var i = 3; i < SETTING_ROWS.length; i++) {
+    if (!v[i][0] || (i === 3 && String(v[i][0]).indexOf('비우면') >= 0)) {
+      sheet.getRange(i + 1, 1).setValue(SETTING_ROWS[i][0]);
+      v[i][0] = SETTING_ROWS[i][0];
+      if (v[i][1] === '' && i > 3) {
+        sheet.getRange(i + 1, 2).setValue(SETTING_ROWS[i][1]);
+        v[i][1] = SETTING_ROWS[i][1];
+      }
+    }
+  }
+  var gb = Number(v[5][1]);
   return {
-    title: String(v[0][0] || '우리 반 작품 갤러리'),
-    code: String(v[1][0] || '').trim(),
-    open: v[2][0] === '' ? true : isTrue_(v[2][0]),
-    folder: folderId_(v[3][0])
+    title: String(v[0][1] || '우리 반 작품 갤러리'),
+    code: String(v[1][1] || '').trim(),
+    open: v[2][1] === '' ? true : isTrue_(v[2][1]),
+    folder: folderId_(v[3][1]),
+    shareFiles: v[4][1] === '' ? true : isTrue_(v[4][1]),
+    maxTotal: (gb > 0 ? gb : DEFAULT_TOTAL_GB) * 1024 * 1024 * 1024
   };
 }
 

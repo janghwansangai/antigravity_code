@@ -10,11 +10,12 @@ export default defineConfig({
   build: {
     // pdf.js(PDF 내용 보이기)는 PDF를 올릴 때만 불러오는 큰 파일이라 경고 기준을 넉넉히 둡니다.
     chunkSizeWarningLimit: 1600,
-    // 두 페이지: 포트폴리오 만들기(index.html) + 우리 반 작품 갤러리(gallery.html)
+    // 세 페이지: 포트폴리오 만들기(index.html) + 우리 반 작품 갤러리(gallery.html) + 사용법 안내(guide.html)
     rolldownOptions: {
       input: {
         main: resolve(root, 'index.html'),
-        gallery: resolve(root, 'gallery.html')
+        gallery: resolve(root, 'gallery.html'),
+        guide: resolve(root, 'guide.html')
       }
     }
   },
