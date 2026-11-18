@@ -241,7 +241,8 @@ function setupStepsHtml() {
                 <a class="btn btn-sm" href="https://github.com/janghwansangai/antigravity_code/blob/main/apps-script/Code.gs" target="_blank" rel="noopener">원문 보기 ↗</a>
               </div>
             </li>
-            <li><b>appsscript.json</b>(권한을 좁히는 설정 파일): 왼쪽 <b>⚙️ 프로젝트 설정</b> → <b>‘편집기에서 appsscript.json 매니페스트 파일 표시’</b> 체크 → 왼쪽 파일 목록의 <b>appsscript.json</b>을 열고 모두 지운 뒤 붙여 넣기
+            <li><b>appsscript.json</b>(권한을 좁히는 설정 파일): Apps Script 화면 맨 왼쪽 아이콘 줄의 <b>⚙️(프로젝트 설정)</b> → 맨 위 ‘일반 설정’의 <b>‘편집기에 "appsscript.json" 매니페스트 파일 표시’</b> 체크 → 다시 왼쪽 <b>&lt;&gt;(편집기)</b>로 돌아가 파일 목록의 <b>appsscript.json</b>을 열고 모두 지운 뒤 붙여 넣기
+              <small class="g-hint">시트 메뉴의 설정이 아니라 Apps Script 화면의 ⚙️예요. 아이콘에 마우스를 올리면 이름이 보여요.</small>
               <div class="g-code-actions">
                 <button type="button" class="btn btn-primary btn-sm" data-g="copy-manifest">📋 appsscript.json 복사</button>
               </div>

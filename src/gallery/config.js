@@ -6,7 +6,7 @@
  *    비어 있으면 갤러리 만들기 화면에 '직접 만들기(코드 붙여넣기)' 안내만 보여요.
  *    예: 'https://docs.google.com/spreadsheets/d/1AbC…xyz/edit'
  */
-export const TEMPLATE_SHEET = '';
+export const TEMPLATE_SHEET = 'https://docs.google.com/spreadsheets/d/1WcYYb8tPsBx4TTvkc1CsaCZDznAU1F2RDe2EsF81Zw0/edit';
 
 /** 시트 주소 → 번호 */
 export function templateId(text = TEMPLATE_SHEET) {
